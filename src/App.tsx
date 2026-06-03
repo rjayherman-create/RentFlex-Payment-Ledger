@@ -22,22 +22,39 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
-type PlanType = "monthly" | "twice_monthly" | "weekly" | "custom";
-type PaymentMethod = "cash_app" | "chime" | "cash" | "money_order" | "zelle" | "other";
+type PlanType = "monthly" | "twice_monthly" | "weekly" | "bi_weekly" | "custom";
+type PaymentMethod = "cash_app" | "chime" | "zelle" | "venmo" | "paypal" | "ach" | "cash" | "money_order" | "other";
 type PaymentStatus = "paid" | "window_open" | "partial" | "late" | "upcoming" | "missed";
-type ViewId = "dashboard" | "properties" | "tenants" | "documents" | "ledger" | "reminders" | "late" | "reports" | "settings";
+type ViewId = "dashboard" | "properties" | "tenants" | "new_tenant" | "documents" | "ledger" | "reminders" | "late" | "reports" | "settings";
 type DocumentKind = "invoice" | "statement";
 type DocumentStatus = "draft" | "approved" | "sent";
+type PlanStatus = "active" | "paused" | "completed" | "cancelled";
+type AccountType =
+  | "section_8"
+  | "cash_paying"
+  | "ssi_disability"
+  | "social_security"
+  | "employment"
+  | "pension"
+  | "fixed_income"
+  | "mixed_income"
+  | "other";
+type ReminderOffset = "seven_days_before" | "three_days_before" | "due_today" | "three_days_late" | "seven_days_late";
+type DeliveryMethod = "sms" | "email" | "push" | "in_app";
 
 interface Property {
   id: string;
   address: string;
   city: string;
   state: string;
+  zip: string;
+  unitNumber?: string;
   status: "active" | "inactive";
 }
 
 interface PaymentPlan {
+  planName: string;
+  status: PlanStatus;
   monthlyRent: number;
   planType: PlanType;
   graceDays: number;
@@ -54,15 +71,28 @@ interface Tenant {
   propertyId: string;
   firstName: string;
   lastInitial: string;
+  lastName: string;
   email: string;
   phone: string;
+  emergencyContact: string;
+  emergencyPhone: string;
+  accountType: AccountType;
   preferredPaymentMethod: PaymentMethod;
+  paymentMethods: PaymentMethod[];
   cashAppTag: string;
   chimeSign: string;
   chimePhone: string;
   chimeEmail: string;
   backupPaymentMethod: PaymentMethod;
+  leaseStartDate: string;
+  leaseEndDate: string;
   moveInDate: string;
+  securityDeposit: number;
+  lateFee: number;
+  currentBalance: number;
+  reminderOffsets: ReminderOffset[];
+  deliveryMethods: DeliveryMethod[];
+  memo: string;
   active: boolean;
   plan: PaymentPlan;
   notes: string[];
@@ -125,14 +155,59 @@ interface InstallmentState {
   status: PaymentStatus;
 }
 
+interface LedgerRow {
+  date: string;
+  description: string;
+  charge: number;
+  payment: number;
+  balance: number;
+}
+
+interface NewTenantDraft {
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+  emergencyContact: string;
+  emergencyPhone: string;
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  unitNumber: string;
+  moveInDate: string;
+  leaseStartDate: string;
+  leaseEndDate: string;
+  accountType: AccountType;
+  monthlyRent: string;
+  securityDeposit: string;
+  lateFee: string;
+  graceDays: string;
+  currentBalance: string;
+  paymentMethods: PaymentMethod[];
+  preferredPaymentMethod: PaymentMethod;
+  cashAppTag: string;
+  chimeSign: string;
+  chimePhone: string;
+  chimeEmail: string;
+  backupPaymentMethod: PaymentMethod;
+  planName: string;
+  planStatus: PlanStatus;
+  planType: PlanType;
+  planRows: Array<{ label: string; amount: string; windowStartDay: string; windowEndDay: string }>;
+  reminderOffsets: ReminderOffset[];
+  deliveryMethods: DeliveryMethod[];
+  memo: string;
+}
+
 const today = new Date(2026, 5, 3);
 const monthLabel = today.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
 const propertiesSeed: Property[] = [
-  { id: "prop-1", address: "123 Main Street", city: "Newark", state: "NJ", status: "active" },
-  { id: "prop-2", address: "45 Oak Street", city: "Irvington", state: "NJ", status: "active" },
-  { id: "prop-3", address: "88 Pine Street", city: "East Orange", state: "NJ", status: "active" },
-  { id: "prop-4", address: "14 Bergen Avenue", city: "Jersey City", state: "NJ", status: "inactive" }
+  { id: "prop-1", address: "123 Main Street", city: "Newark", state: "NJ", zip: "07102", unitNumber: "1", status: "active" },
+  { id: "prop-2", address: "45 Oak Street", city: "Irvington", state: "NJ", zip: "07111", unitNumber: "2B", status: "active" },
+  { id: "prop-3", address: "88 Pine Street", city: "East Orange", state: "NJ", zip: "07017", unitNumber: "", status: "active" },
+  { id: "prop-4", address: "14 Bergen Avenue", city: "Jersey City", state: "NJ", zip: "07305", unitNumber: "", status: "inactive" }
 ];
 
 const tenantsSeed: Tenant[] = [
@@ -141,17 +216,32 @@ const tenantsSeed: Tenant[] = [
     propertyId: "prop-1",
     firstName: "John",
     lastInitial: "D.",
+    lastName: "Davis",
     email: "john.d@example.com",
     phone: "(973) 555-0184",
+    emergencyContact: "Lisa Davis",
+    emergencyPhone: "(973) 555-0199",
+    accountType: "employment",
     preferredPaymentMethod: "cash_app",
+    paymentMethods: ["cash_app", "chime", "money_order"],
     cashAppTag: "$JohnTenant",
     chimeSign: "$JohnTenant",
     chimePhone: "(973) 555-0184",
     chimeEmail: "john.d@example.com",
     backupPaymentMethod: "money_order",
     moveInDate: "2025-09-01",
+    leaseStartDate: "2025-09-01",
+    leaseEndDate: "2026-08-31",
+    securityDeposit: 900,
+    lateFee: 50,
+    currentBalance: 450,
+    reminderOffsets: ["three_days_before", "due_today", "three_days_late"],
+    deliveryMethods: ["sms", "email"],
+    memo: "Tenant pays in two installments. Send reminder before each payment window.",
     active: true,
     plan: {
+      planName: "Twice Monthly Rent Plan",
+      status: "active",
       monthlyRent: 900,
       planType: "twice_monthly",
       graceDays: 3,
@@ -167,17 +257,32 @@ const tenantsSeed: Tenant[] = [
     propertyId: "prop-2",
     firstName: "Maria",
     lastInitial: "S.",
+    lastName: "Santos",
     email: "maria.s@example.com",
     phone: "(862) 555-0119",
+    emergencyContact: "Ana Santos",
+    emergencyPhone: "(862) 555-0190",
+    accountType: "mixed_income",
     preferredPaymentMethod: "chime",
+    paymentMethods: ["chime", "cash", "zelle"],
     cashAppTag: "$MariaRent",
     chimeSign: "$MariaRent",
     chimePhone: "(862) 555-0119",
     chimeEmail: "maria.s@example.com",
     backupPaymentMethod: "cash",
     moveInDate: "2024-12-15",
+    leaseStartDate: "2024-12-15",
+    leaseEndDate: "2026-12-14",
+    securityDeposit: 850,
+    lateFee: 40,
+    currentBalance: 550,
+    reminderOffsets: ["seven_days_before", "three_days_before", "due_today", "seven_days_late"],
+    deliveryMethods: ["sms", "email", "in_app"],
+    memo: "Partial payments common when work hours change. Keep communication history in notes.",
     active: true,
     plan: {
+      planName: "Mixed Income Split Plan",
+      status: "active",
       monthlyRent: 850,
       planType: "twice_monthly",
       graceDays: 2,
@@ -193,17 +298,32 @@ const tenantsSeed: Tenant[] = [
     propertyId: "prop-3",
     firstName: "Robert",
     lastInitial: "K.",
+    lastName: "King",
     email: "robert.k@example.com",
     phone: "(201) 555-0162",
+    emergencyContact: "Dana King",
+    emergencyPhone: "(201) 555-0191",
+    accountType: "ssi_disability",
     preferredPaymentMethod: "chime",
+    paymentMethods: ["chime", "cash", "money_order"],
     cashAppTag: "$RobPaysRent",
     chimeSign: "$RobPaysRent",
     chimePhone: "(201) 555-0162",
     chimeEmail: "robert.k@example.com",
     backupPaymentMethod: "money_order",
     moveInDate: "2026-01-01",
+    leaseStartDate: "2026-01-01",
+    leaseEndDate: "2026-12-31",
+    securityDeposit: 1000,
+    lateFee: 35,
+    currentBalance: 1000,
+    reminderOffsets: ["three_days_before", "due_today", "three_days_late"],
+    deliveryMethods: ["sms", "in_app"],
+    memo: "Tenant receives SSI on the 3rd. Weekly plan is used to keep payments manageable.",
     active: true,
     plan: {
+      planName: "SSI Weekly Payment Plan",
+      status: "active",
       monthlyRent: 1000,
       planType: "weekly",
       graceDays: 1,
@@ -302,9 +422,49 @@ const documentSeed: RentDocument[] = [
   }
 ];
 
+const defaultNewTenantDraft: NewTenantDraft = {
+  firstName: "",
+  lastName: "",
+  phone: "",
+  email: "",
+  emergencyContact: "",
+  emergencyPhone: "",
+  address: "",
+  city: "",
+  state: "NJ",
+  zip: "",
+  unitNumber: "",
+  moveInDate: "2026-06-03",
+  leaseStartDate: "2026-06-03",
+  leaseEndDate: "2027-06-02",
+  accountType: "cash_paying",
+  monthlyRent: "900",
+  securityDeposit: "900",
+  lateFee: "50",
+  graceDays: "3",
+  currentBalance: "900",
+  paymentMethods: ["cash_app", "chime"],
+  preferredPaymentMethod: "cash_app",
+  cashAppTag: "",
+  chimeSign: "",
+  chimePhone: "",
+  chimeEmail: "",
+  backupPaymentMethod: "money_order",
+  planName: "Flexible Installment Plan",
+  planStatus: "active",
+  planType: "twice_monthly",
+  planRows: [
+    { label: "Payment 1", amount: "450", windowStartDay: "3", windowEndDay: "3" },
+    { label: "Payment 2", amount: "450", windowStartDay: "17", windowEndDay: "17" }
+  ],
+  reminderOffsets: ["seven_days_before", "three_days_before", "due_today", "three_days_late", "seven_days_late"],
+  deliveryMethods: ["sms", "email", "in_app"],
+  memo: "Tenant receives SSI on the 3rd of each month and pension on the 17th. Rent is collected in two installments. Send reminder 3 days before each payment date."
+};
+
 export function App() {
   const [view, setView] = useState<ViewId>("dashboard");
-  const [properties] = useState<Property[]>(propertiesSeed);
+  const [properties, setProperties] = useState<Property[]>(propertiesSeed);
   const [tenants, setTenants] = useState<Tenant[]>(tenantsSeed);
   const [payments, setPayments] = useState<Payment[]>(paymentsSeed);
   const [promises, setPromises] = useState<PromiseToPay[]>(promisesSeed);
@@ -323,6 +483,7 @@ export function App() {
     date: "2026-06-05",
     note: "Tenant promised a follow-up payment."
   });
+  const [newTenantDraft, setNewTenantDraft] = useState<NewTenantDraft>(defaultNewTenantDraft);
 
   const selectedTenant = tenants.find((tenant) => tenant.id === selectedTenantId) ?? tenants[0];
   const selectedProperty = properties.find((property) => property.id === selectedTenant.propertyId) ?? properties[0];
@@ -446,6 +607,72 @@ export function App() {
     );
   }
 
+  function createTenantProfile() {
+    const monthlyRent = numberFromDraft(newTenantDraft.monthlyRent);
+    const propertyId = `prop-${Date.now()}`;
+    const tenantId = `tenant-${Date.now()}`;
+    const nextProperty: Property = {
+      id: propertyId,
+      address: newTenantDraft.address.trim() || "New Property",
+      city: newTenantDraft.city.trim() || "City",
+      state: newTenantDraft.state.trim() || "NJ",
+      zip: newTenantDraft.zip.trim(),
+      unitNumber: newTenantDraft.unitNumber.trim(),
+      status: "active"
+    };
+    const installments = newTenantDraft.planRows
+      .filter((row) => numberFromDraft(row.amount) > 0)
+      .map((row, index) => ({
+        label: row.label.trim() || `Payment ${index + 1}`,
+        amount: numberFromDraft(row.amount),
+        windowStartDay: Math.max(1, Math.min(31, numberFromDraft(row.windowStartDay) || 1)),
+        windowEndDay: Math.max(1, Math.min(31, numberFromDraft(row.windowEndDay) || numberFromDraft(row.windowStartDay) || 1))
+      }));
+    const nextTenant: Tenant = {
+      id: tenantId,
+      propertyId,
+      firstName: newTenantDraft.firstName.trim() || "New",
+      lastInitial: `${(newTenantDraft.lastName.trim()[0] ?? "T").toUpperCase()}.`,
+      lastName: newTenantDraft.lastName.trim() || "Tenant",
+      email: newTenantDraft.email.trim(),
+      phone: newTenantDraft.phone.trim(),
+      emergencyContact: newTenantDraft.emergencyContact.trim(),
+      emergencyPhone: newTenantDraft.emergencyPhone.trim(),
+      accountType: newTenantDraft.accountType,
+      preferredPaymentMethod: newTenantDraft.preferredPaymentMethod,
+      paymentMethods: newTenantDraft.paymentMethods,
+      cashAppTag: newTenantDraft.cashAppTag.trim(),
+      chimeSign: newTenantDraft.chimeSign.trim(),
+      chimePhone: newTenantDraft.chimePhone.trim(),
+      chimeEmail: newTenantDraft.chimeEmail.trim(),
+      backupPaymentMethod: newTenantDraft.backupPaymentMethod,
+      moveInDate: newTenantDraft.moveInDate,
+      leaseStartDate: newTenantDraft.leaseStartDate,
+      leaseEndDate: newTenantDraft.leaseEndDate,
+      securityDeposit: numberFromDraft(newTenantDraft.securityDeposit),
+      lateFee: numberFromDraft(newTenantDraft.lateFee),
+      currentBalance: numberFromDraft(newTenantDraft.currentBalance),
+      reminderOffsets: newTenantDraft.reminderOffsets,
+      deliveryMethods: newTenantDraft.deliveryMethods,
+      memo: newTenantDraft.memo,
+      active: true,
+      plan: {
+        planName: newTenantDraft.planName.trim() || "Flexible Payment Plan",
+        status: newTenantDraft.planStatus,
+        monthlyRent,
+        planType: newTenantDraft.planType,
+        graceDays: numberFromDraft(newTenantDraft.graceDays),
+        installments: installments.length > 0 ? installments : createPlanFromType(newTenantDraft.planType, monthlyRent, numberFromDraft(newTenantDraft.graceDays)).installments
+      },
+      notes: [newTenantDraft.memo].filter(Boolean)
+    };
+    setProperties((current) => [...current, nextProperty]);
+    setTenants((current) => [...current, nextTenant]);
+    setSelectedTenantId(tenantId);
+    setNewTenantDraft(defaultNewTenantDraft);
+    setView("tenants");
+  }
+
   function exportCsv() {
     const header = "Tenant,Property,Installment,Expected,Paid,Balance,Status,Window Start,Window End\n";
     const rows = installmentStates
@@ -548,6 +775,14 @@ export function App() {
             setSelectedTenantId={setSelectedTenantId}
             tenants={visibleTenants}
             updatePlanType={updatePlanType}
+          />
+        ) : null}
+
+        {view === "new_tenant" ? (
+          <NewTenantView
+            createTenantProfile={createTenantProfile}
+            draft={newTenantDraft}
+            setDraft={setNewTenantDraft}
           />
         ) : null}
 
@@ -821,6 +1056,146 @@ function TenantsView(props: {
   );
 }
 
+function NewTenantView(props: {
+  createTenantProfile: () => void;
+  draft: NewTenantDraft;
+  setDraft: (draft: NewTenantDraft) => void;
+}) {
+  const updateDraft = (patch: Partial<NewTenantDraft>) => props.setDraft({ ...props.draft, ...patch });
+  const updatePlanRow = (index: number, patch: Partial<NewTenantDraft["planRows"][number]>) => {
+    updateDraft({
+      planRows: props.draft.planRows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row)
+    });
+  };
+
+  return (
+    <section className="panel">
+      <PanelHead eyebrow="New tenant setup" title="Create tenant profile and ongoing plan" icon={UserRound}>
+        <button className="primary-button compact" onClick={props.createTenantProfile} type="button">
+          <Plus size={16} /> Save Tenant
+        </button>
+      </PanelHead>
+
+      <div className="setup-grid">
+        <FormSection title="Tenant Information">
+          <label><span>First Name</span><input value={props.draft.firstName} onChange={(event) => updateDraft({ firstName: event.target.value })} /></label>
+          <label><span>Last Name</span><input value={props.draft.lastName} onChange={(event) => updateDraft({ lastName: event.target.value })} /></label>
+          <label><span>Phone Number</span><input value={props.draft.phone} onChange={(event) => updateDraft({ phone: event.target.value })} /></label>
+          <label><span>Email Address</span><input value={props.draft.email} onChange={(event) => updateDraft({ email: event.target.value })} /></label>
+          <label><span>Emergency Contact</span><input value={props.draft.emergencyContact} onChange={(event) => updateDraft({ emergencyContact: event.target.value })} /></label>
+          <label><span>Emergency Phone</span><input value={props.draft.emergencyPhone} onChange={(event) => updateDraft({ emergencyPhone: event.target.value })} /></label>
+        </FormSection>
+
+        <FormSection title="Property Information">
+          <label><span>Street Address</span><input value={props.draft.address} onChange={(event) => updateDraft({ address: event.target.value })} /></label>
+          <label><span>City</span><input value={props.draft.city} onChange={(event) => updateDraft({ city: event.target.value })} /></label>
+          <label><span>State</span><input value={props.draft.state} onChange={(event) => updateDraft({ state: event.target.value })} /></label>
+          <label><span>ZIP Code</span><input value={props.draft.zip} onChange={(event) => updateDraft({ zip: event.target.value })} /></label>
+          <label><span>Unit Number</span><input value={props.draft.unitNumber} onChange={(event) => updateDraft({ unitNumber: event.target.value })} /></label>
+          <label><span>Move-In Date</span><input type="date" value={props.draft.moveInDate} onChange={(event) => updateDraft({ moveInDate: event.target.value })} /></label>
+          <label><span>Lease Start</span><input type="date" value={props.draft.leaseStartDate} onChange={(event) => updateDraft({ leaseStartDate: event.target.value })} /></label>
+          <label><span>Lease End</span><input type="date" value={props.draft.leaseEndDate} onChange={(event) => updateDraft({ leaseEndDate: event.target.value })} /></label>
+        </FormSection>
+
+        <FormSection title="Account Type and Rent Details">
+          <label className="wide-field"><span>Account Type</span><select value={props.draft.accountType} onChange={(event) => updateDraft({ accountType: event.target.value as AccountType })}>
+            {accountTypes.map((type) => <option key={type} value={type}>{accountTypeLabel(type)}</option>)}
+          </select></label>
+          <label><span>Monthly Rent</span><input value={props.draft.monthlyRent} onChange={(event) => updateDraft({ monthlyRent: event.target.value })} inputMode="decimal" /></label>
+          <label><span>Security Deposit</span><input value={props.draft.securityDeposit} onChange={(event) => updateDraft({ securityDeposit: event.target.value })} inputMode="decimal" /></label>
+          <label><span>Late Fee</span><input value={props.draft.lateFee} onChange={(event) => updateDraft({ lateFee: event.target.value })} inputMode="decimal" /></label>
+          <label><span>Grace Period Days</span><input value={props.draft.graceDays} onChange={(event) => updateDraft({ graceDays: event.target.value })} inputMode="numeric" /></label>
+          <label><span>Current Balance</span><input value={props.draft.currentBalance} onChange={(event) => updateDraft({ currentBalance: event.target.value })} inputMode="decimal" /></label>
+        </FormSection>
+
+        <FormSection title="Payment Methods">
+          <CheckboxGrid
+            values={paymentMethods}
+            selected={props.draft.paymentMethods}
+            labelFor={methodLabel}
+            onChange={(paymentMethods) => updateDraft({ paymentMethods, preferredPaymentMethod: paymentMethods[0] ?? props.draft.preferredPaymentMethod })}
+          />
+          <label><span>Preferred Method</span><select value={props.draft.preferredPaymentMethod} onChange={(event) => updateDraft({ preferredPaymentMethod: event.target.value as PaymentMethod })}>
+            {paymentMethods.map((method) => <option key={method} value={method}>{methodLabel(method)}</option>)}
+          </select></label>
+          <label><span>Backup Method</span><select value={props.draft.backupPaymentMethod} onChange={(event) => updateDraft({ backupPaymentMethod: event.target.value as PaymentMethod })}>
+            {paymentMethods.map((method) => <option key={method} value={method}>{methodLabel(method)}</option>)}
+          </select></label>
+          <label><span>Cash App Tag</span><input value={props.draft.cashAppTag} onChange={(event) => updateDraft({ cashAppTag: event.target.value })} /></label>
+          <label><span>ChimeSign</span><input value={props.draft.chimeSign} onChange={(event) => updateDraft({ chimeSign: event.target.value })} /></label>
+          <label><span>Chime Phone</span><input value={props.draft.chimePhone} onChange={(event) => updateDraft({ chimePhone: event.target.value })} /></label>
+          <label><span>Chime Email</span><input value={props.draft.chimeEmail} onChange={(event) => updateDraft({ chimeEmail: event.target.value })} /></label>
+        </FormSection>
+
+        <FormSection title="Ongoing Payment Plan Builder" wide>
+          <label><span>Plan Name</span><input value={props.draft.planName} onChange={(event) => updateDraft({ planName: event.target.value })} /></label>
+          <label><span>Plan Status</span><select value={props.draft.planStatus} onChange={(event) => updateDraft({ planStatus: event.target.value as PlanStatus })}>
+            {planStatuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
+          </select></label>
+          <label><span>Schedule Type</span><select value={props.draft.planType} onChange={(event) => updateDraft({ planType: event.target.value as PlanType })}>
+            {planTypes.map((type) => <option key={type} value={type}>{planLabel(type)}</option>)}
+          </select></label>
+          <div className="plan-row-list">
+            {props.draft.planRows.map((row, index) => (
+              <article key={index}>
+                <input value={row.label} onChange={(event) => updatePlanRow(index, { label: event.target.value })} aria-label="Plan row label" />
+                <input value={row.amount} onChange={(event) => updatePlanRow(index, { amount: event.target.value })} aria-label="Plan row amount" inputMode="decimal" />
+                <input value={row.windowStartDay} onChange={(event) => updatePlanRow(index, { windowStartDay: event.target.value })} aria-label="Start day" inputMode="numeric" />
+                <input value={row.windowEndDay} onChange={(event) => updatePlanRow(index, { windowEndDay: event.target.value })} aria-label="End day" inputMode="numeric" />
+              </article>
+            ))}
+          </div>
+          <button className="secondary-button compact" onClick={() => updateDraft({ planRows: [...props.draft.planRows, { label: "Custom Payment", amount: "0", windowStartDay: "1", windowEndDay: "1" }] })} type="button">
+            <Plus size={16} /> Add Date / Amount
+          </button>
+        </FormSection>
+
+        <FormSection title="Payment Reminders" wide>
+          <CheckboxGrid values={reminderOffsets} selected={props.draft.reminderOffsets} labelFor={reminderLabel} onChange={(reminderOffsets) => updateDraft({ reminderOffsets })} />
+          <CheckboxGrid values={deliveryMethods} selected={props.draft.deliveryMethods} labelFor={deliveryLabel} onChange={(deliveryMethods) => updateDraft({ deliveryMethods })} />
+        </FormSection>
+
+        <FormSection title="Memo / Notes" wide>
+          <label className="wide-field"><span>Internal Notes</span><textarea value={props.draft.memo} onChange={(event) => updateDraft({ memo: event.target.value })} rows={7} /></label>
+        </FormSection>
+      </div>
+    </section>
+  );
+}
+
+function FormSection({ children, title, wide = false }: { children: React.ReactNode; title: string; wide?: boolean }) {
+  return (
+    <section className={wide ? "form-section wide-section" : "form-section"}>
+      <h3>{title}</h3>
+      <div>{children}</div>
+    </section>
+  );
+}
+
+function CheckboxGrid<T extends string>(props: {
+  labelFor: (value: T) => string;
+  onChange: (values: T[]) => void;
+  selected: T[];
+  values: T[];
+}) {
+  return (
+    <div className="checkbox-grid">
+      {props.values.map((value) => (
+        <label key={value}>
+          <input
+            checked={props.selected.includes(value)}
+            onChange={(event) => {
+              props.onChange(event.target.checked ? [...props.selected, value] : props.selected.filter((item) => item !== value));
+            }}
+            type="checkbox"
+          />
+          <span>{props.labelFor(value)}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function DocumentsView(props: {
   approveDocument: (documentId: string) => void;
   documents: RentDocument[];
@@ -898,6 +1273,8 @@ function DocumentsView(props: {
 }
 
 function LedgerView(props: { installmentStates: InstallmentState[]; payments: Payment[]; exportCsv: () => void }) {
+  const ledgerRows = buildLedgerRows(props.installmentStates, props.payments);
+
   return (
     <section className="panel">
       <PanelHead eyebrow="Rent ledger" title="Expected vs received" icon={ReceiptText}>
@@ -905,6 +1282,33 @@ function LedgerView(props: { installmentStates: InstallmentState[]; payments: Pa
           <Download size={16} /> Export CSV
         </button>
       </PanelHead>
+      <h3 className="section-subtitle first-subtitle">Automatic Ledger</h3>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Charge</th>
+              <th>Payment</th>
+              <th>Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ledgerRows.map((row, index) => (
+              <tr key={`${row.date}-${row.description}-${index}`}>
+                <td>{friendlyDate(row.date)}</td>
+                <td>{row.description}</td>
+                <td>{money(row.charge)}</td>
+                <td>{money(row.payment)}</td>
+                <td>{money(row.balance)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 className="section-subtitle">Installment Status</h3>
       <div className="table-wrap">
         <table>
           <thead>
@@ -1105,6 +1509,7 @@ const navItems: Array<{ id: ViewId; label: string; icon: typeof Home }> = [
   { id: "dashboard", label: "Dashboard", icon: ClipboardList },
   { id: "properties", label: "Properties", icon: Home },
   { id: "tenants", label: "Tenants", icon: UserRound },
+  { id: "new_tenant", label: "New Tenant", icon: Plus },
   { id: "documents", label: "Invoices & Statements", icon: FileText },
   { id: "ledger", label: "Rent Ledger", icon: ReceiptText },
   { id: "reminders", label: "Reminders", icon: BellRing },
@@ -1113,7 +1518,12 @@ const navItems: Array<{ id: ViewId; label: string; icon: typeof Home }> = [
   { id: "settings", label: "Settings", icon: Settings }
 ];
 
-const paymentMethods: PaymentMethod[] = ["cash_app", "chime", "cash", "money_order", "zelle", "other"];
+const paymentMethods: PaymentMethod[] = ["cash_app", "chime", "zelle", "venmo", "paypal", "ach", "cash", "money_order", "other"];
+const accountTypes: AccountType[] = ["section_8", "cash_paying", "ssi_disability", "social_security", "employment", "pension", "fixed_income", "mixed_income", "other"];
+const planTypes: PlanType[] = ["monthly", "twice_monthly", "weekly", "bi_weekly", "custom"];
+const planStatuses: PlanStatus[] = ["active", "paused", "completed", "cancelled"];
+const reminderOffsets: ReminderOffset[] = ["seven_days_before", "three_days_before", "due_today", "three_days_late", "seven_days_late"];
+const deliveryMethods: DeliveryMethod[] = ["sms", "email", "push", "in_app"];
 
 function buildInstallmentStates(tenants: Tenant[], properties: Property[], payments: Payment[]): InstallmentState[] {
   return tenants.flatMap((tenant) => {
@@ -1141,6 +1551,42 @@ function buildInstallmentStates(tenants: Tenant[], properties: Property[], payme
       };
     });
   });
+}
+
+function buildLedgerRows(states: InstallmentState[], payments: Payment[]): LedgerRow[] {
+  const tenantMap = new Map(states.map((state) => [state.tenant.id, state]));
+  const chargeEvents = Array.from(new Set(states.map((state) => state.tenant.id))).map((tenantId) => {
+    const state = tenantMap.get(tenantId)!;
+    return {
+      amount: state.tenant.plan.monthlyRent,
+      date: toInputDate(new Date(today.getFullYear(), today.getMonth(), 1)),
+      description: `${state.tenant.firstName} ${state.tenant.lastInitial} Monthly Rent`,
+      type: "charge" as const
+    };
+  });
+  const paymentEvents = payments.map((payment) => {
+    const state = tenantMap.get(payment.tenantId);
+    const tenantName = state ? `${state.tenant.firstName} ${state.tenant.lastInitial}` : "Tenant";
+    return {
+      amount: payment.amount,
+      date: payment.receivedDate,
+      description: `${tenantName} ${methodLabel(payment.method)} Payment`,
+      type: "payment" as const
+    };
+  });
+  let balance = 0;
+  return [...chargeEvents, ...paymentEvents]
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.type === "charge" ? -1 : 1))
+    .map((event) => {
+      balance += event.type === "charge" ? event.amount : -event.amount;
+      return {
+        date: event.date,
+        description: event.description,
+        charge: event.type === "charge" ? event.amount : 0,
+        payment: event.type === "payment" ? event.amount : 0,
+        balance
+      };
+    });
 }
 
 function getStatus(paid: number, expected: number, windowStart: Date, windowEnd: Date, graceEnd: Date): PaymentStatus {
@@ -1180,10 +1626,12 @@ function tenantStatus(states: InstallmentState[]): PaymentStatus {
 
 function createPlanFromType(planType: PlanType, monthlyRent: number, graceDays: number): PaymentPlan {
   if (planType === "monthly") {
-    return { monthlyRent, planType, graceDays, installments: [{ label: "June rent", amount: monthlyRent, windowStartDay: 1, windowEndDay: 7 }] };
+    return { planName: "Monthly Rent Plan", status: "active", monthlyRent, planType, graceDays, installments: [{ label: "June rent", amount: monthlyRent, windowStartDay: 1, windowEndDay: 7 }] };
   }
   if (planType === "weekly") {
     return {
+      planName: "Weekly Rent Plan",
+      status: "active",
       monthlyRent,
       planType,
       graceDays,
@@ -1195,8 +1643,23 @@ function createPlanFromType(planType: PlanType, monthlyRent: number, graceDays: 
       }))
     };
   }
+  if (planType === "bi_weekly") {
+    return {
+      planName: "Bi-Weekly Rent Plan",
+      status: "active",
+      monthlyRent,
+      planType,
+      graceDays,
+      installments: [
+        { label: "Bi-weekly payment 1", amount: Math.round(monthlyRent / 2), windowStartDay: 3, windowEndDay: 3 },
+        { label: "Bi-weekly payment 2", amount: monthlyRent - Math.round(monthlyRent / 2), windowStartDay: 17, windowEndDay: 17 }
+      ]
+    };
+  }
   if (planType === "custom") {
     return {
+      planName: "Custom Payment Plan",
+      status: "active",
       monthlyRent,
       planType,
       graceDays,
@@ -1208,6 +1671,8 @@ function createPlanFromType(planType: PlanType, monthlyRent: number, graceDays: 
     };
   }
   return {
+    planName: "Semi-Monthly Rent Plan",
+    status: "active",
     monthlyRent,
     planType,
     graceDays,
@@ -1254,14 +1719,62 @@ function paymentInstruction(tenant: Tenant) {
 
 function methodLabel(method: PaymentMethod) {
   const labels: Record<PaymentMethod, string> = {
+    ach: "ACH Bank Transfer",
     cash_app: "Cash App",
     chime: "Chime",
     cash: "Cash",
     money_order: "Money Order",
+    paypal: "PayPal",
+    venmo: "Venmo",
     zelle: "Zelle",
     other: "Other"
   };
   return labels[method];
+}
+
+function accountTypeLabel(accountType: AccountType) {
+  const labels: Record<AccountType, string> = {
+    section_8: "Section 8 / Housing Choice Voucher",
+    cash_paying: "Cash Paying Tenant",
+    ssi_disability: "SSI / Disability Income",
+    social_security: "Social Security Income",
+    employment: "Employment Income",
+    pension: "Pension Income",
+    fixed_income: "Fixed Income",
+    mixed_income: "Mixed Income Sources",
+    other: "Other"
+  };
+  return labels[accountType];
+}
+
+function statusLabel(status: PlanStatus) {
+  return status.replace("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function reminderLabel(reminder: ReminderOffset) {
+  const labels: Record<ReminderOffset, string> = {
+    seven_days_before: "7 Days Before Due Date",
+    three_days_before: "3 Days Before Due Date",
+    due_today: "Due Today",
+    three_days_late: "3 Days Late",
+    seven_days_late: "7 Days Late"
+  };
+  return labels[reminder];
+}
+
+function deliveryLabel(delivery: DeliveryMethod) {
+  const labels: Record<DeliveryMethod, string> = {
+    sms: "SMS",
+    email: "Email",
+    push: "Push Notification",
+    in_app: "In-App Notification"
+  };
+  return labels[delivery];
+}
+
+function numberFromDraft(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function money(value: number) {
@@ -1269,6 +1782,8 @@ function money(value: number) {
 }
 
 function planLabel(planType: PlanType) {
+  if (planType === "twice_monthly") return "Semi-Monthly";
+  if (planType === "bi_weekly") return "Bi-Weekly";
   return planType.replace("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
