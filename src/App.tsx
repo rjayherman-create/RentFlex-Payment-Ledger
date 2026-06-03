@@ -23,11 +23,13 @@ import {
   WalletCards
 } from "lucide-react";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { AuthControls } from "@/components/AuthControls";
 
 type PlanType = "monthly" | "twice_monthly" | "weekly" | "bi_weekly" | "custom";
+type Weekday = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
 type PaymentMethod = "cash_app" | "chime" | "zelle" | "venmo" | "paypal" | "ach" | "cash" | "money_order" | "other";
 type PaymentStatus = "paid" | "window_open" | "partial" | "late" | "upcoming" | "missed";
-type ViewId = "dashboard" | "rent_due" | "properties" | "tenants" | "payment_plans" | "new_tenant" | "documents" | "ledger" | "reminders" | "late" | "reports" | "settings";
+type ViewId = "dashboard" | "rent_due" | "properties" | "tenants" | "payment_plans" | "plan_acceptance" | "new_tenant" | "documents" | "ledger" | "reminders" | "late" | "reports" | "settings" | "mobile_app";
 type DocumentKind = "invoice" | "statement";
 type DocumentStatus = "draft" | "approved" | "sent";
 type PlanStatus = "active" | "paused" | "completed" | "cancelled";
@@ -41,7 +43,7 @@ type AccountType =
   | "fixed_income"
   | "mixed_income"
   | "other";
-type ReminderOffset = "seven_days_before" | "three_days_before" | "due_today" | "three_days_late" | "seven_days_late";
+type ReminderOffset = "three_days_before" | "one_day_before" | "payment_day" | "two_days_late" | "seven_days_late";
 type DeliveryMethod = "sms" | "email" | "push" | "in_app";
 
 interface Property {
@@ -60,11 +62,16 @@ interface PaymentPlan {
   monthlyRent: number;
   planType: PlanType;
   graceDays: number;
+  paymentFrequency?: PlanType;
+  typicalPayday?: Weekday;
+  nextExpectedPayday?: string;
+  leaseDueDate?: string;
   installments: Array<{
     label: string;
     amount: number;
     windowStartDay: number;
     windowEndDay: number;
+    expectedDate?: string;
   }>;
 }
 
@@ -129,6 +136,40 @@ interface ReminderLog {
   status: "draft" | "queued" | "sent";
 }
 
+interface PlanAcceptanceRecord {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  propertyAddress: string;
+  phoneNumber: string;
+  acceptedAt: string;
+  agreementVersion: string;
+  deviceInfo: string;
+  ipAddress: string;
+  acceptedVia: "link" | "sms_yes";
+  typedName: string;
+  planName: string;
+  paymentPlanDescription: string;
+  nextExpectedPaymentDate: string;
+}
+
+interface PlanActivityLogEntry {
+  id: string;
+  tenantId: string;
+  title: string;
+  details: string;
+  createdAt: string;
+  agreementVersion?: string;
+}
+
+interface GeneratedPlanPdf {
+  id: string;
+  tenantId: string;
+  fileName: string;
+  content: string;
+  createdAt: string;
+}
+
 interface RentDocument {
   id: string;
   tenantId: string;
@@ -180,12 +221,16 @@ interface NewTenantDraft {
   moveInDate: string;
   startOfLease: string;
   leaseEndDate: string;
+  leaseDueDate: string;
   accountType: AccountType;
   monthlyRent: string;
   securityDeposit: string;
   lateFee: string;
   graceDays: string;
   currentBalance: string;
+  paymentFrequency: PlanType;
+  typicalPayday: Weekday;
+  nextExpectedPayday: string;
   paymentMethods: PaymentMethod[];
   preferredPaymentMethod: PaymentMethod;
   cashAppTag: string;
@@ -203,8 +248,11 @@ interface NewTenantDraft {
 }
 
 interface AppState {
+  activityLogs?: PlanActivityLogEntry[];
   documents: RentDocument[];
+  generatedPlanPdfs?: GeneratedPlanPdf[];
   payments: Payment[];
+  planAcceptances?: PlanAcceptanceRecord[];
   promises: PromiseToPay[];
   properties: Property[];
   reminders: ReminderLog[];
@@ -246,7 +294,7 @@ const tenantsSeed: Tenant[] = [
     securityDeposit: 900,
     lateFee: 50,
     currentBalance: 450,
-    reminderOffsets: ["three_days_before", "due_today", "three_days_late"],
+    reminderOffsets: ["three_days_before", "one_day_before", "payment_day", "two_days_late", "seven_days_late"],
     deliveryMethods: ["sms", "email"],
     memo: "Tenant pays in two installments. Send reminder before each payment window.",
     active: true,
@@ -287,7 +335,7 @@ const tenantsSeed: Tenant[] = [
     securityDeposit: 850,
     lateFee: 40,
     currentBalance: 550,
-    reminderOffsets: ["seven_days_before", "three_days_before", "due_today", "seven_days_late"],
+    reminderOffsets: ["three_days_before", "one_day_before", "payment_day", "two_days_late", "seven_days_late"],
     deliveryMethods: ["sms", "email", "in_app"],
     memo: "Partial payments common when work hours change. Keep communication history in notes.",
     active: true,
@@ -328,7 +376,7 @@ const tenantsSeed: Tenant[] = [
     securityDeposit: 1000,
     lateFee: 35,
     currentBalance: 1000,
-    reminderOffsets: ["three_days_before", "due_today", "three_days_late"],
+    reminderOffsets: ["three_days_before", "one_day_before", "payment_day", "two_days_late", "seven_days_late"],
     deliveryMethods: ["sms", "in_app"],
     memo: "Tenant receives SSI on the 3rd. Weekly plan is used to keep payments manageable.",
     active: true,
@@ -448,12 +496,16 @@ const defaultNewTenantDraft: NewTenantDraft = {
   moveInDate: "2026-06-03",
   startOfLease: "2026-03-01",
   leaseEndDate: "2027-06-02",
+  leaseDueDate: "2026-06-01",
   accountType: "cash_paying",
   monthlyRent: "900",
   securityDeposit: "900",
   lateFee: "50",
   graceDays: "3",
   currentBalance: "900",
+  paymentFrequency: "twice_monthly",
+  typicalPayday: "wednesday",
+  nextExpectedPayday: "2026-06-03",
   paymentMethods: ["cash_app", "chime"],
   preferredPaymentMethod: "cash_app",
   cashAppTag: "",
@@ -468,12 +520,12 @@ const defaultNewTenantDraft: NewTenantDraft = {
     { label: "Payment 1", amount: "450", windowStartDay: "3", windowEndDay: "3" },
     { label: "Payment 2", amount: "450", windowStartDay: "17", windowEndDay: "17" }
   ],
-  reminderOffsets: ["seven_days_before", "three_days_before", "due_today", "three_days_late", "seven_days_late"],
+  reminderOffsets: ["three_days_before", "one_day_before", "payment_day", "two_days_late", "seven_days_late"],
   deliveryMethods: ["sms", "email", "in_app"],
   memo: "Tenant receives SSI on the 3rd of each month and pension on the 17th. Rent is collected in two installments. Send reminder 3 days before each payment date."
 };
 
-export function App() {
+export default function App() {
   const [view, setView] = useState<ViewId>("dashboard");
   const [properties, setProperties] = useState<Property[]>(propertiesSeed);
   const [tenants, setTenants] = useState<Tenant[]>(tenantsSeed);
@@ -482,6 +534,10 @@ export function App() {
   const [reminders, setReminders] = useState<ReminderLog[]>([]);
   const [documents, setDocuments] = useState<RentDocument[]>(documentSeed);
   const [selectedTenantId, setSelectedTenantId] = useState("tenant-1");
+  const [planAcceptanceTenantId, setPlanAcceptanceTenantId] = useState<string | null>(null);
+  const [planAcceptanceRecords, setPlanAcceptanceRecords] = useState<PlanAcceptanceRecord[]>([]);
+  const [activityLogs, setActivityLogs] = useState<PlanActivityLogEntry[]>([]);
+  const [generatedPlanPdfs, setGeneratedPlanPdfs] = useState<GeneratedPlanPdf[]>([]);
   const [query, setQuery] = useState("");
   const [propertyFilter] = useState("all");
   const [syncStatus, setSyncStatus] = useState("Using local demo data");
@@ -510,6 +566,9 @@ export function App() {
         setPromises(state.promises);
         setReminders(state.reminders);
         setDocuments(state.documents);
+        setPlanAcceptanceRecords(state.planAcceptances ?? []);
+        setActivityLogs(state.activityLogs ?? []);
+        setGeneratedPlanPdfs(state.generatedPlanPdfs ?? []);
         setSelectedTenantId(state.tenants[0]?.id ?? "tenant-1");
         setSyncStatus("Connected to SQLite database");
       })
@@ -523,11 +582,14 @@ export function App() {
 
   const selectedTenant = tenants.find((tenant) => tenant.id === selectedTenantId) ?? tenants[0];
   const selectedProperty = properties.find((property) => property.id === selectedTenant.propertyId) ?? properties[0];
+  const planAcceptanceTenant = tenants.find((tenant) => tenant.id === planAcceptanceTenantId) ?? selectedTenant;
+  const planAcceptanceProperty = properties.find((property) => property.id === planAcceptanceTenant.propertyId) ?? selectedProperty;
 
   const installmentStates = useMemo(
     () => buildInstallmentStates(tenants, properties, payments),
     [payments, properties, tenants]
   );
+  const planAcceptanceInstallments = installmentStates.filter((item) => item.tenant.id === planAcceptanceTenant.id);
 
   const filteredInstallmentStates = useMemo(() => {
     const normalizedQuery = query.toLowerCase().trim();
@@ -609,6 +671,81 @@ export function App() {
     void apiPost("/api/promises", promise);
   }
 
+  function openPlanAcceptance(tenantId: string) {
+    setPlanAcceptanceTenantId(tenantId);
+    setSelectedTenantId(tenantId);
+    setView("plan_acceptance");
+  }
+
+  function shiftPlanNextPayday(tenantId: string) {
+    const tenant = tenants.find((item) => item.id === tenantId);
+    if (!tenant) return;
+
+    const nextExpectedPayday = toInputDate(
+      advanceDateByFrequency(
+        parseInputDate(tenant.plan.nextExpectedPayday ?? toInputDate(today)),
+        tenant.plan.paymentFrequency ?? tenant.plan.planType
+      )
+    );
+
+    const updatedPlan = createPlanFromType(
+      tenant.plan.planType,
+      tenant.plan.monthlyRent,
+      tenant.plan.graceDays,
+      tenant.plan.typicalPayday ?? "friday",
+      nextExpectedPayday,
+      tenant.plan.leaseDueDate ?? tenant.leaseEndDate,
+      tenant.plan.installments
+    );
+
+    setTenants((current) =>
+      current.map((item) => (item.id === tenantId ? { ...item, plan: updatedPlan } : item))
+    );
+
+    void apiPatch(`/api/tenants/${tenantId}/payday`, { plan: updatedPlan }).then((response) => {
+      if (response?.activityLog) {
+        setActivityLogs((current) => [response.activityLog, ...current]);
+      }
+    });
+    setSyncStatus("Next payday updated without creating a new plan");
+  }
+
+  function acceptPaymentPlan(acceptedVia: "link" | "sms_yes", typedName: string) {
+    const tenant = planAcceptanceTenant;
+    const property = planAcceptanceProperty;
+    const nextInstallment = planAcceptanceInstallments.find((item) => item.balance > 0) ?? planAcceptanceInstallments[0];
+    const record: PlanAcceptanceRecord = {
+      id: `acceptance-${Date.now()}`,
+      tenantId: tenant.id,
+      tenantName: `${tenant.firstName} ${tenant.lastInitial}`,
+      propertyAddress: property.address,
+      phoneNumber: tenant.phone,
+      acceptedAt: new Date().toISOString(),
+      agreementVersion: "1.0",
+      deviceInfo: typeof navigator !== "undefined" ? navigator.userAgent : "Unknown device",
+      ipAddress: "Captured by backend",
+      acceptedVia,
+      typedName: typedName.trim(),
+      planName: tenant.plan.planName,
+      paymentPlanDescription: describePaymentPlan(tenant.plan),
+      nextExpectedPaymentDate: nextInstallment ? friendlyDate(toInputDate(nextInstallment.windowStart)) : "TBD"
+    };
+
+    setPlanAcceptanceRecords((current) => [record, ...current]);
+    setSyncStatus("Payment plan acceptance recorded");
+    void apiPost("/api/plan-acceptances", record).then((response) => {
+      if (response?.acceptance) {
+        setPlanAcceptanceRecords((current) => [response.acceptance, ...current.filter((item) => item.id !== response.acceptance.id)]);
+      }
+      if (response?.activityLog) {
+        setActivityLogs((current) => [response.activityLog, ...current]);
+      }
+      if (response?.generatedPdf) {
+        setGeneratedPlanPdfs((current) => [response.generatedPdf, ...current]);
+      }
+    });
+  }
+
   function queueReminder(tenant: Tenant, state?: InstallmentState) {
     const property = properties.find((item) => item.id === tenant.propertyId);
     const target = state ?? installmentStates.find((item) => item.tenant.id === tenant.id && item.balance > 0);
@@ -667,7 +804,18 @@ export function App() {
     setTenants((current) =>
       current.map((tenant) =>
         tenant.id === selectedTenant.id
-          ? { ...tenant, plan: createPlanFromType(planType, tenant.plan.monthlyRent, tenant.plan.graceDays) }
+          ? {
+              ...tenant,
+              plan: createPlanFromType(
+                planType,
+                tenant.plan.monthlyRent,
+                tenant.plan.graceDays,
+                tenant.plan.typicalPayday ?? "friday",
+                tenant.plan.nextExpectedPayday ?? toInputDate(today),
+                tenant.plan.leaseDueDate ?? tenant.leaseEndDate,
+                tenant.plan.installments
+              )
+            }
           : tenant
       )
     );
@@ -733,7 +881,21 @@ export function App() {
         monthlyRent,
         planType: newTenantDraft.planType,
         graceDays: numberFromDraft(newTenantDraft.graceDays),
-        installments: installments.length > 0 ? installments : createPlanFromType(newTenantDraft.planType, monthlyRent, numberFromDraft(newTenantDraft.graceDays)).installments
+        paymentFrequency: newTenantDraft.paymentFrequency,
+        typicalPayday: newTenantDraft.typicalPayday,
+        nextExpectedPayday: newTenantDraft.nextExpectedPayday,
+        leaseDueDate: newTenantDraft.leaseDueDate,
+        installments:
+          installments.length > 0
+            ? installments
+            : createPlanFromType(
+                newTenantDraft.planType,
+                monthlyRent,
+                numberFromDraft(newTenantDraft.graceDays),
+                newTenantDraft.typicalPayday,
+                newTenantDraft.nextExpectedPayday,
+                newTenantDraft.leaseDueDate
+              ).installments
       },
       notes: [newTenantDraft.memo].filter(Boolean)
     };
@@ -816,13 +978,13 @@ export function App() {
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search tenants, properties, phone, Cash App, Chime..." />
           </label>
           <div className="top-actions">
-            <button className="primary-button" onClick={() => setView("new_tenant")} type="button">
-              <Plus size={18} /> New Tenant
-            </button>
             <button className="notification-button" onClick={() => setView("reminders")} type="button" aria-label="Open reminders">
               <BellRing size={20} />
               <b>{reminders.length || documentStats.drafts}</b>
             </button>
+            <div className="auth-controls">
+              <AuthControls />
+            </div>
             <button className="user-menu" type="button" aria-label="Owner menu">
               <span>JD</span>
               <strong>John D.<small>Owner</small></strong>
@@ -879,7 +1041,22 @@ export function App() {
           />
         ) : null}
 
-        {view === "payment_plans" ? <PaymentPlansView tenants={visibleTenants} properties={properties} /> : null}
+        {view === "payment_plans" ? <PaymentPlansView installmentStates={installmentStates} onSendPlan={openPlanAcceptance} onShiftPayday={shiftPlanNextPayday} payments={payments} properties={properties} tenants={visibleTenants} /> : null}
+
+        {view === "plan_acceptance" ? (
+          <PaymentPlanAcceptanceView
+            acceptanceRecords={planAcceptanceRecords}
+            activityLogs={activityLogs}
+            generatedPlanPdfs={generatedPlanPdfs}
+            onAcceptPlan={acceptPaymentPlan}
+            onBack={() => setView("payment_plans")}
+            onQuickSmsAccept={(typedName) => acceptPaymentPlan("sms_yes", typedName)}
+            paymentPlanDescription={describePaymentPlan(planAcceptanceTenant.plan)}
+            property={planAcceptanceProperty}
+            selectedInstallments={planAcceptanceInstallments}
+            tenant={planAcceptanceTenant}
+          />
+        ) : null}
 
         {view === "new_tenant" ? (
           <NewTenantView
@@ -905,6 +1082,7 @@ export function App() {
         {view === "late" ? <LateView installmentStates={installmentStates} promises={promises} queueReminder={queueReminder} /> : null}
         {view === "reports" ? <ReportsView installmentStates={installmentStates} payments={payments} exportCsv={exportCsv} /> : null}
         {view === "settings" ? <SettingsView /> : null}
+        {view === "mobile_app" ? <MobileOptionsView /> : null}
       </section>
     </main>
   );
@@ -1109,38 +1287,208 @@ function RentDueView(props: { installmentStates: InstallmentState[] }) {
   );
 }
 
-function PaymentPlansView(props: { tenants: Tenant[]; properties: Property[] }) {
+function PaymentPlansView(props: { installmentStates: InstallmentState[]; onSendPlan: (tenantId: string) => void; onShiftPayday: (tenantId: string) => void; payments: Payment[]; properties: Property[]; tenants: Tenant[] }) {
+  const tenantSummaries = summarizeByTenant(props.installmentStates);
+
   return (
     <section className="panel">
-      <PanelHead eyebrow="Tenants" title="Recurring payment plans" icon={CalendarClock} />
+      <PanelHead eyebrow="Tenants" title="Recurring payment plans" icon={CalendarClock}>
+        <span className="quiet-note">Send a plan so the tenant can review and accept without creating an account.</span>
+      </PanelHead>
       <div className="workflow-table">
-        <div className="workflow-table-head payment-plan-row">
-          <span>Tenant</span>
-          <span>Plan Name</span>
-          <span>Payment Dates</span>
-          <span>Amounts</span>
+        <div className="workflow-table-head payment-plan-summary-row">
+          <span>Tenant Name</span>
+          <span>Property Address</span>
+          <span>Monthly Rent</span>
+          <span>Current Balance</span>
+          <span>Amount Collected</span>
+          <span>Amount Remaining</span>
+          <span>Next Expected Payment</span>
+          <span>Planned Payment Amount</span>
+          <span>Last Payment Received</span>
           <span>Status</span>
+          <span>Plan Actions</span>
         </div>
-        {props.tenants.map((tenant) => {
+        {tenantSummaries.map((summary) => {
+          const tenant = summary.tenant;
           const property = props.properties.find((item) => item.id === tenant.propertyId);
+          const tenantInstallments = props.installmentStates.filter((item) => item.tenant.id === tenant.id);
+          const nextInstallment = tenantInstallments.find((item) => item.balance > 0) ?? tenantInstallments[0];
+          const lastPayment = props.payments.filter((payment) => payment.tenantId === tenant.id).sort((a, b) => b.timestamp.localeCompare(a.timestamp))[0];
+          const currentBalance = summary.balance;
+          const amountCollected = summary.paid;
+          const plannedPaymentAmount = nextInstallment?.expectedAmount ?? tenant.plan.monthlyRent;
           return (
-            <article className="payment-plan-row" key={tenant.id}>
+            <article className="payment-plan-summary-row" key={tenant.id}>
               <div>
                 <strong>{tenant.firstName} {tenant.lastInitial}</strong>
-                <small>{property?.address ?? "Unassigned property"}</small>
+                <small>{tenant.plan.planName}</small>
               </div>
               <div>
-                <strong>{tenant.plan.planName}</strong>
-                <small>{planLabel(tenant.plan.planType)}</small>
+                <strong>{property?.address ?? "Unassigned property"}</strong>
+                <small>{property?.city ?? "Unknown location"}</small>
               </div>
-              <span>{tenant.plan.installments.map((item) => `${ordinalDay(item.windowStartDay)}-${ordinalDay(item.windowEndDay)}`).join(", ")}</span>
-              <span>{tenant.plan.installments.map((item) => money(item.amount)).join(" / ")}</span>
-              <StatusPill status={tenant.plan.status === "active" ? "paid" : "inactive"} />
+              <span>{money(tenant.plan.monthlyRent)}</span>
+              <span>{money(currentBalance)}</span>
+              <span>{money(amountCollected)}</span>
+              <span>{money(currentBalance)}</span>
+              <span>{nextInstallment ? friendlyDate(nextInstallment.windowStart.toISOString().slice(0, 10)) : "TBD"}</span>
+              <span>{money(plannedPaymentAmount)}</span>
+              <span>{lastPayment ? friendlyDate(lastPayment.receivedDate) : "No payments yet"}</span>
+              <StatusPill status={summary.status} />
+              <div className="payment-plan-actions">
+                <button className="secondary-button compact" onClick={() => props.onSendPlan(tenant.id)} type="button">
+                  <Send size={16} /> Send Plan
+                </button>
+                <button className="secondary-button compact" onClick={() => props.onShiftPayday(tenant.id)} type="button">
+                  <CalendarClock size={16} /> Shift Payday
+                </button>
+              </div>
             </article>
           );
         })}
       </div>
     </section>
+  );
+}
+
+function PaymentPlanAcceptanceView(props: {
+  acceptanceRecords: PlanAcceptanceRecord[];
+  activityLogs: PlanActivityLogEntry[];
+  generatedPlanPdfs: GeneratedPlanPdf[];
+  onAcceptPlan: (acceptedVia: "link" | "sms_yes", typedName: string) => void;
+  onBack: () => void;
+  onQuickSmsAccept: (typedName: string) => void;
+  paymentPlanDescription: string;
+  property: Property;
+  selectedInstallments: InstallmentState[];
+  tenant: Tenant;
+}) {
+  const [reviewed, setReviewed] = useState(false);
+  const [typedName, setTypedName] = useState(`${props.tenant.firstName} ${props.tenant.lastName}`);
+  const [acceptanceMode, setAcceptanceMode] = useState<"link" | "sms_yes">("link");
+  const nextInstallment = props.selectedInstallments.find((item) => item.balance > 0) ?? props.selectedInstallments[0];
+  const secureLink = `https://rentflex.example/accept/${props.tenant.id}/${toInputDate(today)}`;
+  const smsMessage = [
+    "RentFlex Payment Plan",
+    `Property: ${props.property.address}`,
+    `Monthly Rent: ${money(props.tenant.plan.monthlyRent)}`,
+    "",
+    "Expected Payment Pattern:",
+    props.paymentPlanDescription,
+    "",
+    "Reply YES to accept this payment plan."
+  ].join("\n");
+  const latestRecord = props.acceptanceRecords.find((record) => record.tenantId === props.tenant.id) ?? null;
+  const latestPdf = props.generatedPlanPdfs.find((item) => item.tenantId === props.tenant.id) ?? null;
+  const latestLog = props.activityLogs.find((item) => item.tenantId === props.tenant.id) ?? null;
+
+  return (
+    <div className="content-grid document-grid">
+      <section className="panel">
+        <PanelHead eyebrow="Plan acceptance" title="Tenant review page" icon={CheckCircle2}>
+          <button className="text-link" onClick={props.onBack} type="button">Back to plans</button>
+        </PanelHead>
+        <p className="section-copy">Tenants can review the plan and accept in under a minute without creating an account.</p>
+
+        <div className="acceptance-shell">
+          <article className="acceptance-preview">
+            <h3>RentFlex Payment Plan</h3>
+            <div className="acceptance-row"><span>Tenant</span><strong>{props.tenant.firstName} {props.tenant.lastName}</strong></div>
+            <div className="acceptance-row"><span>Property</span><strong>{props.property.address}</strong></div>
+            <div className="acceptance-row"><span>Monthly Rent</span><strong>{money(props.tenant.plan.monthlyRent)}</strong></div>
+            <div className="acceptance-row"><span>Payment Schedule</span><strong>{props.paymentPlanDescription}</strong></div>
+            <div className="acceptance-row"><span>Next Expected Payment</span><strong>{nextInstallment ? friendlyDate(toInputDate(nextInstallment.windowStart)) : "TBD"}</strong></div>
+            <p className="acceptance-note">This payment plan is intended to help organize expected payments and does not replace the lease agreement.</p>
+            <div className="acceptance-link-block">
+              <span>Secure link</span>
+              <strong>{secureLink}</strong>
+            </div>
+          </article>
+
+          <article className="acceptance-form-card">
+            <div className="acceptance-toggle">
+              <button className={acceptanceMode === "link" ? "toggle-pill active" : "toggle-pill"} onClick={() => setAcceptanceMode("link")} type="button">Link acceptance</button>
+              <button className={acceptanceMode === "sms_yes" ? "toggle-pill active" : "toggle-pill"} onClick={() => setAcceptanceMode("sms_yes")} type="button">SMS reply YES</button>
+            </div>
+
+            {acceptanceMode === "link" ? (
+              <>
+                <label className="acceptance-checkbox">
+                  <input checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} type="checkbox" />
+                  <span>I have reviewed this payment plan.</span>
+                </label>
+                <label className="acceptance-field">
+                  <span>Type Full Name</span>
+                  <input value={typedName} onChange={(event) => setTypedName(event.target.value)} />
+                </label>
+                <button className="primary-button" disabled={!reviewed || typedName.trim().length < 3} onClick={() => props.onAcceptPlan("link", typedName)} type="button">
+                  Accept Payment Plan
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="sms-preview">
+                  <h3>SMS Sent</h3>
+                  <pre>{smsMessage}</pre>
+                </div>
+                <label className="acceptance-field">
+                  <span>Reply typed by tenant</span>
+                  <input value={typedName} onChange={(event) => setTypedName(event.target.value)} placeholder="Tenant replies YES" />
+                </label>
+                <button className="primary-button" disabled={typedName.trim().length < 3} onClick={() => props.onQuickSmsAccept(typedName)} type="button">
+                  Record YES Reply
+                </button>
+              </>
+            )}
+          </article>
+        </div>
+
+        {latestRecord ? (
+          <article className="acceptance-success-card">
+            <StatusPill status="sent" />
+            <strong>Thank You.</strong>
+            <p>Your payment plan has been accepted. A copy has been saved to your tenant record.</p>
+            <div className="acceptance-success-actions">
+              <button className="secondary-button compact" onClick={props.onBack} type="button">View Plan</button>
+              <button
+                className="secondary-button compact"
+                disabled={!latestPdf}
+                onClick={() => {
+                  if (!latestPdf) return;
+                  const blob = new Blob([latestPdf.content], { type: "text/plain;charset=utf-8" });
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement("a");
+                  link.href = url;
+                  link.download = latestPdf.fileName;
+                  link.click();
+                  URL.revokeObjectURL(url);
+                }}
+                type="button"
+              >
+                Download PDF
+              </button>
+            </div>
+          </article>
+        ) : null}
+      </section>
+
+      <section className="panel">
+        <PanelHead eyebrow="Activity" title="Acceptance log" icon={FileText} />
+        {latestRecord ? (
+          <article className="acceptance-log-card">
+            <StatusPill status="sent" />
+            <strong>{latestRecord.tenantName}</strong>
+            <span>{latestRecord.propertyAddress}</span>
+            <span>{friendlyDate(latestRecord.acceptedAt.slice(0, 10))} at {new Date(latestRecord.acceptedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+            <span>Agreement version {latestRecord.agreementVersion}</span>
+            {latestLog ? <span>{latestLog.title} - {latestLog.details}</span> : null}
+          </article>
+        ) : (
+          <div className="empty-state">No acceptance records yet.</div>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -1379,6 +1727,7 @@ function NewTenantView(props: {
           <label><span>Unit Number</span><input value={props.draft.unitNumber} onChange={(event) => updateDraft({ unitNumber: event.target.value })} /></label>
           <label><span>Move-In Date</span><input type="date" value={props.draft.moveInDate} onChange={(event) => updateDraft({ moveInDate: event.target.value })} /></label>
           <label><span>Lease End</span><input type="date" value={props.draft.leaseEndDate} onChange={(event) => updateDraft({ leaseEndDate: event.target.value })} /></label>
+          <label><span>Lease Due Date</span><input type="date" value={props.draft.leaseDueDate} onChange={(event) => updateDraft({ leaseDueDate: event.target.value })} /></label>
         </FormSection>
 
         <FormSection title="Account Type and Rent Details">
@@ -1416,7 +1765,14 @@ function NewTenantView(props: {
           <label><span>Plan Status</span><select value={props.draft.planStatus} onChange={(event) => updateDraft({ planStatus: event.target.value as PlanStatus })}>
             {planStatuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
           </select></label>
-          <label><span>Schedule Type</span><select value={props.draft.planType} onChange={(event) => updateDraft({ planType: event.target.value as PlanType })}>
+          <label><span>Payment Frequency</span><select value={props.draft.paymentFrequency} onChange={(event) => updateDraft({ paymentFrequency: event.target.value as PlanType })}>
+            {planTypes.map((type) => <option key={type} value={type}>{planLabel(type)}</option>)}
+          </select></label>
+          <label><span>Typical Payday</span><select value={props.draft.typicalPayday} onChange={(event) => updateDraft({ typicalPayday: event.target.value as Weekday })}>
+            {weekdayOptions.map((day) => <option key={day} value={day}>{weekdayLabel(day)}</option>)}
+          </select></label>
+          <label><span>Next Expected Payday</span><input type="date" value={props.draft.nextExpectedPayday} onChange={(event) => updateDraft({ nextExpectedPayday: event.target.value })} /></label>
+          <label><span>Schedule Type</span><select value={props.draft.planType} onChange={(event) => updateDraft({ planType: event.target.value as PlanType, paymentFrequency: event.target.value as PlanType })}>
             {planTypes.map((type) => <option key={type} value={type}>{planLabel(type)}</option>)}
           </select></label>
           <div className="plan-row-list">
@@ -1639,29 +1995,62 @@ function LedgerView(props: { installmentStates: InstallmentState[]; payments: Pa
 }
 
 function ReminderView(props: { reminders: ReminderLog[]; tenants: Tenant[]; queueReminder: (tenant: Tenant) => void }) {
+  const draftCount = props.reminders.filter((reminder) => reminder.status === "draft").length;
+  const queuedCount = props.reminders.filter((reminder) => reminder.status === "queued").length;
+  const sentCount = props.reminders.filter((reminder) => reminder.status === "sent").length;
+
   return (
     <section className="panel">
       <PanelHead eyebrow="Reminder center" title="Drafts and tenant messages" icon={MessageSquareText} />
+      <p className="section-copy">Build and review tenant reminders before sending SMS or email follow-ups.</p>
+      <div className="reminder-stats">
+        <article>
+          <strong>{props.reminders.length}</strong>
+          <span>Total reminders</span>
+        </article>
+        <article>
+          <strong>{draftCount}</strong>
+          <span>Drafts</span>
+        </article>
+        <article>
+          <strong>{queuedCount}</strong>
+          <span>Queued</span>
+        </article>
+        <article>
+          <strong>{sentCount}</strong>
+          <span>Sent</span>
+        </article>
+      </div>
+
       <div className="reminder-actions">
         {props.tenants.map((tenant) => (
           <button className="secondary-button compact" key={tenant.id} onClick={() => props.queueReminder(tenant)} type="button">
-            <BellRing size={16} /> {tenant.firstName}
+            <BellRing size={16} /> {tenant.firstName} {tenant.lastInitial}
           </button>
         ))}
       </div>
+
       <div className="reminder-list">
         {props.reminders.length === 0 ? (
           <div className="empty-state">No reminder drafts yet.</div>
         ) : (
           props.reminders.map((reminder) => {
             const tenant = props.tenants.find((item) => item.id === reminder.tenantId);
+            const reminderDate = friendlyDate(reminder.sendDate);
             return (
-              <article key={reminder.id}>
-                <div>
-                  <strong>{tenant?.firstName} {tenant?.lastInitial}</strong>
-                  <span>{friendlyDate(reminder.sendDate)} - {reminder.status}</span>
+              <article className="reminder-card" key={reminder.id}>
+                <div className="reminder-card-head">
+                  <div>
+                    <strong>{tenant?.firstName} {tenant?.lastInitial}</strong>
+                    <span>{tenant?.phone}</span>
+                  </div>
+                  <span className={`reminder-status ${reminder.status}`}>{reminder.status}</span>
                 </div>
-                <p>{reminder.message}</p>
+                <div className="reminder-card-meta">
+                  <span>Send date: {reminderDate}</span>
+                  <span>Delivery: SMS or email draft</span>
+                </div>
+                <pre className="reminder-message">{reminder.message}</pre>
               </article>
             );
           })
@@ -1760,6 +2149,93 @@ function SettingsView() {
   );
 }
 
+function MobileOptionsView() {
+  const platforms = [
+    {
+      title: "Android app",
+      subtitle: "Capacitor wrapper for Google Play and emulator testing.",
+      detail: "Open the app in Android Studio after syncing the web build.",
+      route: "http://10.0.2.2:5175"
+    },
+    {
+      title: "iPhone app",
+      subtitle: "Capacitor wrapper for iOS and simulator testing.",
+      detail: "Use the same React codebase and open it in Xcode on macOS.",
+      route: "http://localhost:5175"
+    },
+    {
+      title: "Shared backend",
+      subtitle: "One backend for web, Android, and iPhone.",
+      detail: "Keep tenant data, reminders, payments, and reports synced everywhere.",
+      route: "PostgreSQL + Railway"
+    }
+  ];
+
+  const mobileFeatures = [
+    "Tenant management",
+    "Payment plans",
+    "Payment tracking",
+    "SMS reminders",
+    "PDF reports",
+    "Email reports",
+    "Push notifications",
+    "Camera document scans",
+    "Offline mode"
+  ];
+
+  const setupSteps = [
+    "npm install @capacitor/core @capacitor/cli",
+    "npx cap init",
+    "npm install @capacitor/android @capacitor/ios",
+    "npx cap add android",
+    "npx cap add ios",
+    "npm run build",
+    "npx cap sync"
+  ];
+
+  return (
+    <div className="content-grid">
+      <section className="panel">
+        <PanelHead eyebrow="Mobile" title="Phone options for the app" icon={Phone} />
+        <p className="section-copy">
+          Keep the existing web app as the shared source of truth, then package it once for Android and iPhone with Capacitor.
+        </p>
+        <div className="setup-grid">
+          {platforms.map((platform) => (
+            <article key={platform.title} className="settings-grid-card mobile-option-card">
+              <strong>{platform.title}</strong>
+              <span>{platform.subtitle}</span>
+              <div className="mobile-route">{platform.route}</div>
+              <span>{platform.detail}</span>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <PanelHead eyebrow="Setup" title="Capacitor workflow" icon={ClipboardList} />
+        <div className="mobile-steps">
+          {setupSteps.map((step, index) => (
+            <div className="mobile-step" key={step}>
+              <span>{index + 1}</span>
+              <code>{step}</code>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <PanelHead eyebrow="App scope" title="Mobile features to include" icon={MessageSquareText} />
+        <div className="mobile-chip-list">
+          {mobileFeatures.map((feature) => (
+            <span className="mobile-chip" key={feature}>{feature}</span>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function MetricCard({ icon: Icon, label, tone, value }: { icon: typeof DollarSign; label: string; tone: string; value: string }) {
   return (
     <article className={`metric-card ${tone}`}>
@@ -1826,6 +2302,10 @@ const navSections: Array<{ title: string; items: Array<{ id: ViewId; label: stri
       { id: "reports", label: "Reports", icon: Download },
       { id: "settings", label: "Settings", icon: Settings }
     ]
+  },
+  {
+    title: "Mobile",
+    items: [{ id: "mobile_app", label: "Phone Options", icon: Phone }]
   }
 ];
 
@@ -1833,15 +2313,16 @@ const paymentMethods: PaymentMethod[] = ["cash_app", "chime", "zelle", "venmo", 
 const accountTypes: AccountType[] = ["section_8", "cash_paying", "ssi_disability", "social_security", "employment", "pension", "fixed_income", "mixed_income", "other"];
 const planTypes: PlanType[] = ["monthly", "twice_monthly", "weekly", "bi_weekly", "custom"];
 const planStatuses: PlanStatus[] = ["active", "paused", "completed", "cancelled"];
-const reminderOffsets: ReminderOffset[] = ["seven_days_before", "three_days_before", "due_today", "three_days_late", "seven_days_late"];
+const weekdayOptions: Weekday[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+const reminderOffsets: ReminderOffset[] = ["three_days_before", "one_day_before", "payment_day", "two_days_late", "seven_days_late"];
 const deliveryMethods: DeliveryMethod[] = ["sms", "email", "push", "in_app"];
 
 function buildInstallmentStates(tenants: Tenant[], properties: Property[], payments: Payment[]): InstallmentState[] {
   return tenants.flatMap((tenant) => {
     const property = properties.find((item) => item.id === tenant.propertyId) ?? properties[0];
     return tenant.plan.installments.map((installment) => {
-      const windowStart = new Date(today.getFullYear(), today.getMonth(), installment.windowStartDay);
-      const windowEnd = new Date(today.getFullYear(), today.getMonth(), installment.windowEndDay);
+      const windowStart = installment.expectedDate ? parseInputDate(installment.expectedDate) : new Date(today.getFullYear(), today.getMonth(), installment.windowStartDay);
+      const windowEnd = installment.expectedDate ? parseInputDate(installment.expectedDate) : new Date(today.getFullYear(), today.getMonth(), installment.windowEndDay);
       const graceEnd = addDays(windowEnd, tenant.plan.graceDays);
       const paidAmount = payments
         .filter((payment) => payment.tenantId === tenant.id && payment.installmentLabel === installment.label)
@@ -1935,63 +2416,115 @@ function tenantStatus(states: InstallmentState[]): PaymentStatus {
   return "upcoming";
 }
 
-function createPlanFromType(planType: PlanType, monthlyRent: number, graceDays: number): PaymentPlan {
-  if (planType === "monthly") {
-    return { planName: "Monthly Rent Plan", status: "active", monthlyRent, planType, graceDays, installments: [{ label: "June rent", amount: monthlyRent, windowStartDay: 1, windowEndDay: 7 }] };
-  }
-  if (planType === "weekly") {
-    return {
-      planName: "Weekly Rent Plan",
-      status: "active",
-      monthlyRent,
-      planType,
-      graceDays,
-      installments: [1, 8, 15, 22].map((day, index) => ({
-        label: `Week ${index + 1} rent`,
-        amount: Math.round(monthlyRent / 4),
-        windowStartDay: day,
-        windowEndDay: day + 2
-      }))
-    };
-  }
-  if (planType === "bi_weekly") {
-    return {
-      planName: "Bi-Weekly Rent Plan",
-      status: "active",
-      monthlyRent,
-      planType,
-      graceDays,
-      installments: [
-        { label: "Bi-weekly payment 1", amount: Math.round(monthlyRent / 2), windowStartDay: 3, windowEndDay: 3 },
-        { label: "Bi-weekly payment 2", amount: monthlyRent - Math.round(monthlyRent / 2), windowStartDay: 17, windowEndDay: 17 }
-      ]
-    };
-  }
-  if (planType === "custom") {
-    return {
-      planName: "Custom Payment Plan",
-      status: "active",
-      monthlyRent,
-      planType,
-      graceDays,
-      installments: [
-        { label: "Custom June payment 1", amount: Math.round(monthlyRent * 0.34), windowStartDay: 3, windowEndDay: 6 },
-        { label: "Custom June payment 2", amount: Math.round(monthlyRent * 0.33), windowStartDay: 14, windowEndDay: 18 },
-        { label: "Custom June payment 3", amount: monthlyRent - Math.round(monthlyRent * 0.67), windowStartDay: 25, windowEndDay: 28 }
-      ]
-    };
-  }
+function createPlanFromType(
+  planType: PlanType,
+  monthlyRent: number,
+  graceDays: number,
+  typicalPayday: Weekday = "friday",
+  nextExpectedPayday: string = toInputDate(today),
+  leaseDueDate?: string,
+  existingInstallments: PaymentPlan["installments"] = []
+): PaymentPlan {
+  return createPlanFromSchedule(planType, monthlyRent, graceDays, typicalPayday, nextExpectedPayday, leaseDueDate, existingInstallments);
+}
+
+function createPlanFromSchedule(planType: PlanType, monthlyRent: number, graceDays: number, typicalPayday: Weekday, nextExpectedPayday: string, leaseDueDate?: string, existingInstallments: PaymentPlan["installments"] = []): PaymentPlan {
+  const installments = planType === "custom" && existingInstallments.length > 0
+    ? existingInstallments
+    : generateInstallments(planType, monthlyRent, nextExpectedPayday, existingInstallments);
+
+  const planNameMap: Record<PlanType, string> = {
+    monthly: "Monthly Rent Plan",
+    twice_monthly: "Semi-Monthly Rent Plan",
+    weekly: "Weekly Rent Plan",
+    bi_weekly: "Bi-Weekly Rent Plan",
+    custom: "Custom Payment Plan"
+  };
+
   return {
-    planName: "Semi-Monthly Rent Plan",
+    planName: planNameMap[planType],
     status: "active",
     monthlyRent,
     planType,
+    paymentFrequency: planType,
     graceDays,
-    installments: [
-      { label: "First June installment", amount: Math.round(monthlyRent / 2), windowStartDay: 1, windowEndDay: 7 },
-      { label: "Second June installment", amount: monthlyRent - Math.round(monthlyRent / 2), windowStartDay: 15, windowEndDay: 22 }
-    ]
+    typicalPayday,
+    nextExpectedPayday,
+    leaseDueDate,
+    installments
   };
+}
+
+function generateInstallments(planType: PlanType, monthlyRent: number, nextExpectedPayday: string, existingInstallments: PaymentPlan["installments"] = []) {
+  const anchorDate = parseInputDate(nextExpectedPayday);
+  if (Number.isNaN(anchorDate.getTime())) {
+    return existingInstallments.length > 0 ? existingInstallments : [];
+  }
+
+  if (planType === "weekly") {
+    const baseAmount = Math.floor(monthlyRent / 4);
+    const remainder = monthlyRent - baseAmount * 4;
+    return Array.from({ length: 4 }, (_, index) => {
+      const date = addDays(anchorDate, index * 7);
+      return {
+        label: `Week ${index + 1} rent`,
+        amount: index === 3 ? baseAmount + remainder : baseAmount,
+        windowStartDay: date.getDate(),
+        windowEndDay: date.getDate(),
+        expectedDate: toInputDate(date)
+      };
+    });
+  }
+
+  if (planType === "bi_weekly") {
+    const firstAmount = Math.floor(monthlyRent / 2);
+    return [0, 14].map((offset, index) => {
+      const date = addDays(anchorDate, offset);
+      return {
+        label: `Bi-weekly payment ${index + 1}`,
+        amount: index === 0 ? firstAmount : monthlyRent - firstAmount,
+        windowStartDay: date.getDate(),
+        windowEndDay: date.getDate(),
+        expectedDate: toInputDate(date)
+      };
+    });
+  }
+
+  if (planType === "twice_monthly") {
+    const firstAmount = Math.floor(monthlyRent / 2);
+    return [0, 15].map((offset, index) => {
+      const date = addDays(anchorDate, offset);
+      return {
+        label: `Payment ${index + 1}`,
+        amount: index === 0 ? firstAmount : monthlyRent - firstAmount,
+        windowStartDay: date.getDate(),
+        windowEndDay: date.getDate(),
+        expectedDate: toInputDate(date)
+      };
+    });
+  }
+
+  if (planType === "custom") {
+    return [
+      { label: "Custom payment 1", amount: Math.round(monthlyRent * 0.34), windowStartDay: anchorDate.getDate(), windowEndDay: anchorDate.getDate(), expectedDate: toInputDate(anchorDate) },
+      { label: "Custom payment 2", amount: Math.round(monthlyRent * 0.33), windowStartDay: addDays(anchorDate, 14).getDate(), windowEndDay: addDays(anchorDate, 14).getDate(), expectedDate: toInputDate(addDays(anchorDate, 14)) },
+      { label: "Custom payment 3", amount: monthlyRent - Math.round(monthlyRent * 0.67), windowStartDay: addDays(anchorDate, 28).getDate(), windowEndDay: addDays(anchorDate, 28).getDate(), expectedDate: toInputDate(addDays(anchorDate, 28)) }
+    ];
+  }
+
+  return [{ label: "Monthly rent", amount: monthlyRent, windowStartDay: anchorDate.getDate(), windowEndDay: anchorDate.getDate(), expectedDate: toInputDate(anchorDate) }];
+}
+
+function advanceDateByFrequency(date: Date, frequency: PlanType) {
+  if (frequency === "weekly") return addDays(date, 7);
+  if (frequency === "bi_weekly") return addDays(date, 14);
+  if (frequency === "twice_monthly") return addDays(date, 15);
+  if (frequency === "monthly") return addDays(date, 30);
+  return addDays(date, 14);
+}
+
+function parseInputDate(value: string) {
+  return new Date(`${value}T00:00:00`);
 }
 
 function buildReminderMessage(tenant: Tenant, property?: Property, state?: InstallmentState) {
@@ -2064,13 +2597,17 @@ function statusLabel(status: PlanStatus) {
 
 function reminderLabel(reminder: ReminderOffset) {
   const labels: Record<ReminderOffset, string> = {
-    seven_days_before: "7 Days Before Due Date",
-    three_days_before: "3 Days Before Due Date",
-    due_today: "Due Today",
-    three_days_late: "3 Days Late",
+    three_days_before: "3 Days Before Payment",
+    one_day_before: "1 Day Before Payment",
+    payment_day: "Payment Day",
+    two_days_late: "2 Days Late",
     seven_days_late: "7 Days Late"
   };
   return labels[reminder];
+}
+
+function weekdayLabel(day: Weekday) {
+  return day.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function deliveryLabel(delivery: DeliveryMethod) {
@@ -2102,6 +2639,12 @@ function planLabel(planType: PlanType) {
   if (planType === "twice_monthly") return "Semi-Monthly";
   if (planType === "bi_weekly") return "Bi-Weekly";
   return planType.replace("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function describePaymentPlan(plan: PaymentPlan) {
+  return plan.installments
+    .map((item) => `${money(item.amount)} ${item.label.toLowerCase()} (${ordinalDay(item.windowStartDay)}-${ordinalDay(item.windowEndDay)})`)
+    .join(", ");
 }
 
 function ordinalDay(day: number) {
@@ -2144,13 +2687,21 @@ async function loadAppState(): Promise<AppState> {
 }
 
 async function apiPost(path: string, body: unknown) {
-  await fetch(path, {
+  const response = await fetch(path, {
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
     method: "POST"
   });
+  if (!response.ok) return undefined;
+  return response.json();
 }
 
-async function apiPatch(path: string) {
-  await fetch(path, { method: "PATCH" });
+async function apiPatch(path: string, body?: unknown) {
+  const response = await fetch(path, {
+    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    method: "PATCH"
+  });
+  if (!response.ok) return undefined;
+  return response.json();
 }

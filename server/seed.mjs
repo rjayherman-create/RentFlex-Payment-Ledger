@@ -30,7 +30,7 @@ export const tenantsSeed = [
     securityDeposit: 900,
     lateFee: 50,
     currentBalance: 450,
-    reminderOffsets: ["three_days_before", "due_today", "three_days_late"],
+    reminderOffsets: ["three_days_before", "one_day_before", "payment_day", "two_days_late", "seven_days_late"],
     deliveryMethods: ["sms", "email"],
     memo: "Tenant pays in two installments. Send reminder before each payment window.",
     active: true,
@@ -39,10 +39,14 @@ export const tenantsSeed = [
       status: "active",
       monthlyRent: 900,
       planType: "twice_monthly",
+      paymentFrequency: "twice_monthly",
+      typicalPayday: "wednesday",
+      nextExpectedPayday: "2026-06-03",
+      leaseDueDate: "2026-06-01",
       graceDays: 3,
       installments: [
-        { label: "First June installment", amount: 450, windowStartDay: 1, windowEndDay: 7 },
-        { label: "Second June installment", amount: 450, windowStartDay: 15, windowEndDay: 22 }
+        { label: "Payment 1", amount: 450, windowStartDay: 3, windowEndDay: 3, expectedDate: "2026-06-03" },
+        { label: "Payment 2", amount: 450, windowStartDay: 17, windowEndDay: 17, expectedDate: "2026-06-17" }
       ]
     },
     notes: ["Prefers reminder two days before window opens.", "Usually replies PAID after Cash App transfer."]
@@ -71,7 +75,7 @@ export const tenantsSeed = [
     securityDeposit: 850,
     lateFee: 40,
     currentBalance: 550,
-    reminderOffsets: ["seven_days_before", "three_days_before", "due_today", "seven_days_late"],
+    reminderOffsets: ["three_days_before", "one_day_before", "payment_day", "two_days_late", "seven_days_late"],
     deliveryMethods: ["sms", "email", "in_app"],
     memo: "Partial payments common when work hours change. Keep communication history in notes.",
     active: true,
@@ -80,10 +84,14 @@ export const tenantsSeed = [
       status: "active",
       monthlyRent: 850,
       planType: "twice_monthly",
+      paymentFrequency: "twice_monthly",
+      typicalPayday: "friday",
+      nextExpectedPayday: "2026-06-06",
+      leaseDueDate: "2026-06-01",
       graceDays: 2,
       installments: [
-        { label: "First June installment", amount: 425, windowStartDay: 1, windowEndDay: 5 },
-        { label: "Second June installment", amount: 425, windowStartDay: 15, windowEndDay: 20 }
+        { label: "Payment 1", amount: 425, windowStartDay: 6, windowEndDay: 6, expectedDate: "2026-06-06" },
+        { label: "Payment 2", amount: 425, windowStartDay: 20, windowEndDay: 20, expectedDate: "2026-06-20" }
       ]
     },
     notes: ["Partial payments common when work hours change."]
@@ -112,7 +120,7 @@ export const tenantsSeed = [
     securityDeposit: 1000,
     lateFee: 35,
     currentBalance: 1000,
-    reminderOffsets: ["three_days_before", "due_today", "three_days_late"],
+    reminderOffsets: ["three_days_before", "one_day_before", "payment_day", "two_days_late", "seven_days_late"],
     deliveryMethods: ["sms", "in_app"],
     memo: "Tenant receives SSI on the 3rd. Weekly plan is used to keep payments manageable.",
     active: true,
@@ -121,12 +129,16 @@ export const tenantsSeed = [
       status: "active",
       monthlyRent: 1000,
       planType: "weekly",
+      paymentFrequency: "weekly",
+      typicalPayday: "thursday",
+      nextExpectedPayday: "2026-06-04",
+      leaseDueDate: "2026-06-01",
       graceDays: 1,
       installments: [
-        { label: "Week 1 rent", amount: 250, windowStartDay: 1, windowEndDay: 3 },
-        { label: "Week 2 rent", amount: 250, windowStartDay: 8, windowEndDay: 10 },
-        { label: "Week 3 rent", amount: 250, windowStartDay: 15, windowEndDay: 17 },
-        { label: "Week 4 rent", amount: 250, windowStartDay: 22, windowEndDay: 24 }
+        { label: "Week 1 rent", amount: 250, windowStartDay: 4, windowEndDay: 4, expectedDate: "2026-06-04" },
+        { label: "Week 2 rent", amount: 250, windowStartDay: 11, windowEndDay: 11, expectedDate: "2026-06-11" },
+        { label: "Week 3 rent", amount: 250, windowStartDay: 18, windowEndDay: 18, expectedDate: "2026-06-18" },
+        { label: "Week 4 rent", amount: 250, windowStartDay: 25, windowEndDay: 25, expectedDate: "2026-06-25" }
       ]
     },
     notes: ["Needs short messages. Avoid long explanations."]

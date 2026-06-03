@@ -24,7 +24,7 @@ The app automatically creates rent invoices and balance statements from open led
 pnpm dev:all
 ```
 
-This starts the frontend on `http://localhost:5184`, the backend API on `http://localhost:5185`, and the local SQLite database at `data/rentflex.sqlite`.
+This starts the frontend on `http://localhost:5184`, the backend API on `http://localhost:5185`, and connects the API to PostgreSQL via `DATABASE_URL`.
 
 ## Environment Variables
 
@@ -34,10 +34,17 @@ Copy `.env.example` to `.env` for local development.
 RENTFLEX_WEB_PORT=5184
 RENTFLEX_API_PORT=5185
 VITE_API_PROXY_TARGET=http://127.0.0.1:5185
-RENTFLEX_DB_PATH=data/rentflex.sqlite
+DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/rentflex
+DATABASE_SSL=false
 ```
 
-`RENTFLEX_WEB_PORT` controls the Vite dev server, `RENTFLEX_API_PORT` controls the Node API, `VITE_API_PROXY_TARGET` controls the frontend `/api` proxy, and `RENTFLEX_DB_PATH` controls the SQLite file location.
+`RENTFLEX_WEB_PORT` controls the Vite dev server, `RENTFLEX_API_PORT` controls the Node API, `VITE_API_PROXY_TARGET` controls the frontend `/api` proxy, `DATABASE_URL` points to PostgreSQL, and `DATABASE_SSL` toggles TLS for DB connections.
+
+Railway / auth billing env split:
+
+- Safe in browser: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `APP_NAME`
+- Backend only: `CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `DATABASE_URL`, `OPENAI_API_KEY`
+- Control flags: `BYPASS_AUTH`, `REQUIRE_CLERK_STRIPE_ENV`
 
 ## Verify Routes
 
@@ -57,7 +64,7 @@ pnpm build
 
 ## Backend
 
-The backend uses Node's built-in SQLite module and stores app records in `data/rentflex.sqlite`. The frontend loads from `/api/state` and persists landlord actions through API calls.
+The backend uses PostgreSQL and stores app records in an `app_records` table (`collection`, `id`, `data`, `updated_at`). The frontend loads from `/api/state` and persists landlord actions through API calls.
 
 API routes:
 
@@ -68,8 +75,10 @@ API routes:
 - `POST /api/promises`
 - `POST /api/reminders`
 - `POST /api/documents`
+- `POST /api/plan-acceptances`
 - `PATCH /api/documents/:id/approve`
 - `PATCH /api/documents/:id/send`
+- `PATCH /api/tenants/:id/payday`
 
 Core data entities:
 

@@ -1,85 +1,104 @@
-import { mkdirSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
+import pg from "pg";
 import { loadEnvFiles } from "./env.mjs";
 import { documentsSeed, paymentsSeed, propertiesSeed, promisesSeed, tenantsSeed } from "./seed.mjs";
 
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
 loadEnvFiles(rootDir);
 
-const dataDir = join(rootDir, "data");
-mkdirSync(dataDir, { recursive: true });
+const { Pool } = pg;
 
-const dbPath = process.env.RENTFLEX_DB_PATH
-  ? isAbsolute(process.env.RENTFLEX_DB_PATH) ? process.env.RENTFLEX_DB_PATH : join(rootDir, process.env.RENTFLEX_DB_PATH)
-  : join(dataDir, "rentflex.sqlite");
-
-export const db = new DatabaseSync(dbPath);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS app_records (
-    collection TEXT NOT NULL,
-    id TEXT NOT NULL,
-    data TEXT NOT NULL,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (collection, id)
-  );
-`);
-
-const count = db.prepare("SELECT COUNT(*) AS count FROM app_records").get().count;
-if (count === 0) {
-  seedCollection("properties", propertiesSeed);
-  seedCollection("tenants", tenantsSeed);
-  seedCollection("payments", paymentsSeed);
-  seedCollection("promises", promisesSeed);
-  seedCollection("reminders", []);
-  seedCollection("documents", documentsSeed);
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL is required. Set a Postgres connection string in your environment.");
 }
 
-export function getState() {
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_SSL === "false" ? false : process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false
+});
+
+const initPromise = initialize();
+
+export async function getState() {
+  await initPromise;
   return {
-    properties: getCollection("properties"),
-    tenants: getCollection("tenants"),
-    payments: getCollection("payments"),
-    promises: getCollection("promises"),
-    reminders: getCollection("reminders"),
-    documents: getCollection("documents")
+    activityLogs: await getCollection("activity_logs"),
+    properties: await getCollection("properties"),
+    tenants: await getCollection("tenants"),
+    payments: await getCollection("payments"),
+    promises: await getCollection("promises"),
+    reminders: await getCollection("reminders"),
+    documents: await getCollection("documents"),
+    planAcceptances: await getCollection("plan_acceptances"),
+    generatedPlanPdfs: await getCollection("generated_plan_pdfs")
   };
 }
 
-export function upsertRecord(collection, record) {
-  db.prepare(`
+export async function upsertRecord(collection, record) {
+  await initPromise;
+  await pool.query(`
     INSERT INTO app_records (collection, id, data, updated_at)
-    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    VALUES ($1, $2, $3::jsonb, CURRENT_TIMESTAMP)
     ON CONFLICT(collection, id) DO UPDATE SET
       data = excluded.data,
       updated_at = CURRENT_TIMESTAMP
-  `).run(collection, record.id, JSON.stringify(record));
+  `, [collection, record.id, JSON.stringify(record)]);
   return record;
 }
 
-export function patchRecord(collection, id, patch) {
-  const current = getRecord(collection, id);
+export async function patchRecord(collection, id, patch) {
+  await initPromise;
+  const current = await getRecord(collection, id);
   if (!current) return undefined;
   const next = { ...current, ...patch };
-  upsertRecord(collection, next);
+  await upsertRecord(collection, next);
   return next;
 }
 
-function getRecord(collection, id) {
-  const row = db.prepare("SELECT data FROM app_records WHERE collection = ? AND id = ?").get(collection, id);
-  return row ? JSON.parse(row.data) : undefined;
+async function getRecord(collection, id) {
+  const result = await pool.query(
+    "SELECT data FROM app_records WHERE collection = $1 AND id = $2",
+    [collection, id]
+  );
+  return result.rows[0]?.data;
 }
 
-function getCollection(collection) {
-  return db.prepare("SELECT data FROM app_records WHERE collection = ? ORDER BY updated_at, id")
-    .all(collection)
-    .map((row) => JSON.parse(row.data));
+async function getCollection(collection) {
+  const result = await pool.query(
+    "SELECT data FROM app_records WHERE collection = $1 ORDER BY updated_at, id",
+    [collection]
+  );
+  return result.rows.map((row) => row.data);
 }
 
-function seedCollection(collection, records) {
+async function seedCollection(collection, records) {
   for (const record of records) {
-    upsertRecord(collection, record);
+    await upsertRecord(collection, record);
+  }
+}
+
+async function initialize() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_records (
+      collection TEXT NOT NULL,
+      id TEXT NOT NULL,
+      data JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (collection, id)
+    );
+  `);
+
+  const countResult = await pool.query("SELECT COUNT(*)::int AS count FROM app_records");
+  if (countResult.rows[0].count === 0) {
+    await seedCollection("properties", propertiesSeed);
+    await seedCollection("tenants", tenantsSeed);
+    await seedCollection("payments", paymentsSeed);
+    await seedCollection("promises", promisesSeed);
+    await seedCollection("reminders", []);
+    await seedCollection("documents", documentsSeed);
+    await seedCollection("plan_acceptances", []);
+    await seedCollection("activity_logs", []);
+    await seedCollection("generated_plan_pdfs", []);
   }
 }
