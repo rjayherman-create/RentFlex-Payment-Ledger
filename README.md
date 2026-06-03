@@ -1,6 +1,6 @@
 # RentFlex Ledger
 
-Standalone Vite React MVP for a flexible rent reminder, invoice, statement, and ledger system connected conceptually to `rjayherman-create/RentFlex-Payment-Ledger`.
+Standalone Vite React MVP for a flexible rent reminder, invoice, statement, and ledger system.
 
 ## Positioning
 
@@ -11,18 +11,18 @@ The app automatically creates rent invoices and balance statements from open led
 ## Run
 
 ```bash
-pnpm --filter @rentflex/payment-ledger dev
+pnpm dev
 ```
 
 ## Build
 
 ```bash
-pnpm --filter @rentflex/payment-ledger build
+pnpm build
 ```
 
-## Connection Notes
+## Data Model
 
-This app is designed to be moved into or pushed to `https://github.com/rjayherman-create/RentFlex-Payment-Ledger` as the frontend package. It uses in-browser demo state now, and its data types map directly to the requested backend entities:
+The app uses in-browser demo state now, and its data types map directly to the requested backend entities:
 
 - `Property`
 - `Tenant`
@@ -35,6 +35,6 @@ This app is designed to be moved into or pushed to `https://github.com/rjayherma
 - `Statement`
 - `DeliveryLog`
 
-The first backend connection should preserve the manual Cash App and Chime workflow: tenants pay normally, then the landlord records payment status, amount, date, method, notes, and reminder history in the ledger. The invoice/statement workflow should use provider integrations such as SendGrid/Postmark for email and Twilio for SMS, with approval required before delivery.
+The first backend implementation should preserve the manual Cash App and Chime workflow: tenants pay normally, then the landlord records payment status, amount, date, method, notes, and reminder history in the ledger. The invoice/statement workflow should use provider integrations such as SendGrid/Postmark for email and Twilio for SMS, with approval required before delivery.
 
 Chime is intentionally modeled as payment instructions plus manual confirmation in Version 1, not as a direct Chime API integration. Store tenant `chimeSign`, `chimePhone`, `chimeEmail`, preferred payment method, and backup method so reminders and statements can include the correct instructions.
