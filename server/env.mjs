@@ -28,3 +28,51 @@ function unquote(value) {
   }
   return value;
 }
+
+export function parseBoolean(value, fallback = false) {
+  if (value === undefined || value === null || value === "") return fallback;
+  return String(value).toLowerCase() === "true";
+}
+
+export function validateServerEnv() {
+  const errors = [];
+  const isProduction = process.env.NODE_ENV === "production";
+  const requireBillingAuth = parseBoolean(process.env.REQUIRE_CLERK_STRIPE_ENV, isProduction);
+
+  if (!process.env.DATABASE_URL) {
+    errors.push("DATABASE_URL is required.");
+  }
+
+  if (isProduction && parseBoolean(process.env.BYPASS_AUTH, false)) {
+    errors.push("BYPASS_AUTH must be false in production.");
+  }
+
+  if (isProduction && requireBillingAuth) {
+    if (!process.env.CLERK_SECRET_KEY) {
+      errors.push("CLERK_SECRET_KEY is required when REQUIRE_CLERK_STRIPE_ENV=true in production.");
+    }
+    if (!process.env.STRIPE_SECRET_KEY) {
+      errors.push("STRIPE_SECRET_KEY is required when REQUIRE_CLERK_STRIPE_ENV=true in production.");
+    }
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      errors.push("STRIPE_WEBHOOK_SECRET is required when REQUIRE_CLERK_STRIPE_ENV=true in production.");
+    }
+    if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && !process.env.VITE_CLERK_PUBLISHABLE_KEY) {
+      errors.push("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY or VITE_CLERK_PUBLISHABLE_KEY is required in production.");
+    }
+    if (!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY && !process.env.VITE_STRIPE_PUBLISHABLE_KEY) {
+      errors.push("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY or VITE_STRIPE_PUBLISHABLE_KEY is required in production.");
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`Environment validation failed:\n- ${errors.join("\n- ")}`);
+  }
+
+  return {
+    isProduction,
+    requireBillingAuth,
+    publicAppUrl: process.env.PUBLIC_APP_URL || process.env.APP_BASE_URL || "",
+    launchCheckSecret: process.env.LAUNCH_CHECK_SECRET || ""
+  };
+}

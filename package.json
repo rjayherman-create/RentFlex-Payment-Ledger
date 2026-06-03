@@ -8,6 +8,8 @@
     "dev:api": "node server/index.mjs",
     "dev:all": "node scripts/dev-all.mjs",
     "build": "tsc -p tsconfig.json && vite build",
+    "test": "node --test server/env.test.mjs",
+    "lint": "tsc --noEmit -p tsconfig.json",
     "start": "node server/index.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify:routes": "node scripts/verify-routes.mjs"

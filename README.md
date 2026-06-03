@@ -40,11 +40,20 @@ DATABASE_SSL=false
 
 `RENTFLEX_WEB_PORT` controls the Vite dev server, `RENTFLEX_API_PORT` controls the Node API, `VITE_API_PROXY_TARGET` controls the frontend `/api` proxy, `DATABASE_URL` points to PostgreSQL, and `DATABASE_SSL` toggles TLS for DB connections.
 
+`ALLOW_DEMO_SEED` controls whether sample tenant/payment data is auto-seeded into an empty database. Keep this `false` in production.
+
 Railway / auth billing env split:
 
 - Safe in browser: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `APP_NAME`
 - Backend only: `CLERK_SECRET_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `DATABASE_URL`, `OPENAI_API_KEY`
-- Control flags: `BYPASS_AUTH`, `REQUIRE_CLERK_STRIPE_ENV`
+- Control flags: `BYPASS_AUTH`, `REQUIRE_CLERK_STRIPE_ENV`, `LAUNCH_CHECK_SECRET`
+- Deployment URL vars: `PUBLIC_APP_URL`, `APP_BASE_URL`
+
+Startup validation:
+
+- `DATABASE_URL` is always required.
+- In production, `BYPASS_AUTH` must be false.
+- In production with `REQUIRE_CLERK_STRIPE_ENV=true`, Clerk and Stripe secret/publishable keys are required.
 
 ## Verify Routes
 
@@ -62,6 +71,20 @@ This checks the configured frontend/API variables, all sidebar workflow targets,
 pnpm build
 ```
 
+## Lint
+
+```bash
+pnpm lint
+```
+
+## Test
+
+```bash
+pnpm test
+```
+
+This runs launch-safety env validation tests in `server/env.test.mjs`.
+
 ## Backend
 
 The backend uses PostgreSQL and stores app records in an `app_records` table (`collection`, `id`, `data`, `updated_at`). The frontend loads from `/api/state` and persists landlord actions through API calls.
@@ -69,6 +92,7 @@ The backend uses PostgreSQL and stores app records in an `app_records` table (`c
 API routes:
 
 - `GET /api/health`
+- `GET /api/launch-check` (requires `x-launch-check-secret` header)
 - `GET /api/state`
 - `POST /api/tenants`
 - `POST /api/payments`

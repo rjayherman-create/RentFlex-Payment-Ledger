@@ -63,21 +63,35 @@ button:disabled {
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 0;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   background:
     radial-gradient(circle at 16% 8%, rgba(123, 97, 255, 0.34), transparent 24%),
     linear-gradient(180deg, var(--midnight), var(--midnight-2));
   color: #ffffff;
-  padding: 28px 22px;
+  padding: 0 20px 22px;
   box-shadow: 20px 0 60px rgba(8, 20, 45, 0.16);
 }
 
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-height: 90px;
+  min-height: 0;
+  display: grid;
+  align-items: start;
+  margin-bottom: 0;
+  margin-top: -30px;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.brand-image {
+  display: block;
+  width: min(100%, 280px);
+  height: auto;
+  margin-bottom: -58px;
+}
+
+.sidebar > nav {
+  margin-top: -4px;
 }
 
 .brand-mark {

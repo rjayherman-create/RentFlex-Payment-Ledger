@@ -1,7 +1,7 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { loadEnvFiles } from "./env.mjs";
+import { loadEnvFiles, parseBoolean } from "./env.mjs";
 import { documentsSeed, paymentsSeed, propertiesSeed, promisesSeed, tenantsSeed } from "./seed.mjs";
 
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -56,6 +56,16 @@ export async function patchRecord(collection, id, patch) {
   return next;
 }
 
+export async function getDatabaseHealth() {
+  try {
+    await initPromise;
+    await pool.query("SELECT 1");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Database connection failed" };
+  }
+}
+
 async function getRecord(collection, id) {
   const result = await pool.query(
     "SELECT data FROM app_records WHERE collection = $1 AND id = $2",
@@ -90,7 +100,8 @@ async function initialize() {
   `);
 
   const countResult = await pool.query("SELECT COUNT(*)::int AS count FROM app_records");
-  if (countResult.rows[0].count === 0) {
+  const shouldSeedDemo = parseBoolean(process.env.ALLOW_DEMO_SEED, process.env.NODE_ENV !== "production");
+  if (countResult.rows[0].count === 0 && shouldSeedDemo) {
     await seedCollection("properties", propertiesSeed);
     await seedCollection("tenants", tenantsSeed);
     await seedCollection("payments", paymentsSeed);

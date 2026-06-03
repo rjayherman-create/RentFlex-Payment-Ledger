@@ -938,11 +938,7 @@ export default function App() {
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark"><WalletCards size={26} /></div>
-          <div>
-            <strong>RentFlex Ledger</strong>
-            <span>Smart rent. Simple flow.</span>
-          </div>
+          <img className="brand-image" src="/branding/Logo With Text.png" alt="RentFlex Ledger" />
         </div>
 
         <nav aria-label="Primary">
