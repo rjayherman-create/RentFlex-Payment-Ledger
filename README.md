@@ -1,6 +1,6 @@
 # RentFlex Ledger
 
-Standalone Vite React MVP for a flexible rent reminder, invoice, statement, and ledger system connected conceptually to `rjayherman-create/RentFlex-Payment-Ledger`.
+Standalone full-stack MVP for a flexible rent reminder, invoice, statement, payment plan, and ledger system.
 
 ## Positioning
 
@@ -21,18 +21,33 @@ The app automatically creates rent invoices and balance statements from open led
 ## Run
 
 ```bash
-pnpm --filter @rentflex/payment-ledger dev
+pnpm dev:all
 ```
+
+This starts the frontend on `http://localhost:5184`, the backend API on `http://localhost:5185`, and the local SQLite database at `data/rentflex.sqlite`.
 
 ## Build
 
 ```bash
-pnpm --filter @rentflex/payment-ledger build
+pnpm build
 ```
 
-## Connection Notes
+## Backend
 
-This app is designed to be moved into or pushed to `https://github.com/rjayherman-create/RentFlex-Payment-Ledger` as the frontend package. It uses in-browser demo state now, and its data types map directly to the requested backend entities:
+The backend uses Node's built-in SQLite module and stores app records in `data/rentflex.sqlite`. The frontend loads from `/api/state` and persists landlord actions through API calls.
+
+API routes:
+
+- `GET /api/state`
+- `POST /api/tenants`
+- `POST /api/payments`
+- `POST /api/promises`
+- `POST /api/reminders`
+- `POST /api/documents`
+- `PATCH /api/documents/:id/approve`
+- `PATCH /api/documents/:id/send`
+
+Core data entities:
 
 - `Property`
 - `Tenant`
@@ -45,6 +60,6 @@ This app is designed to be moved into or pushed to `https://github.com/rjayherma
 - `Statement`
 - `DeliveryLog`
 
-The first backend connection should preserve the manual Cash App and Chime workflow: tenants pay normally, then the landlord records payment status, amount, date, method, notes, and reminder history in the ledger. The invoice/statement workflow should use provider integrations such as SendGrid/Postmark for email and Twilio for SMS, with approval required before delivery.
+The backend preserves the manual Cash App and Chime workflow: tenants pay normally, then the landlord records payment status, amount, date, method, notes, and reminder history in the ledger. The invoice/statement workflow should use provider integrations such as SendGrid/Postmark for email and Twilio for SMS, with approval required before delivery.
 
 Chime is intentionally modeled as payment instructions plus manual confirmation in Version 1, not as a direct Chime API integration. Store tenant `chimeSign`, `chimePhone`, `chimeEmail`, preferred payment method, and backup method so reminders and statements can include the correct instructions.

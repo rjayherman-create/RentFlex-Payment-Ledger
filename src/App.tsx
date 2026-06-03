@@ -20,7 +20,7 @@ import {
   UserRound,
   WalletCards
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type PlanType = "monthly" | "twice_monthly" | "weekly" | "bi_weekly" | "custom";
 type PaymentMethod = "cash_app" | "chime" | "zelle" | "venmo" | "paypal" | "ach" | "cash" | "money_order" | "other";
@@ -198,6 +198,15 @@ interface NewTenantDraft {
   reminderOffsets: ReminderOffset[];
   deliveryMethods: DeliveryMethod[];
   memo: string;
+}
+
+interface AppState {
+  documents: RentDocument[];
+  payments: Payment[];
+  promises: PromiseToPay[];
+  properties: Property[];
+  reminders: ReminderLog[];
+  tenants: Tenant[];
 }
 
 const today = new Date(2026, 5, 3);
@@ -472,6 +481,7 @@ export function App() {
   const [documents, setDocuments] = useState<RentDocument[]>(documentSeed);
   const [selectedTenantId, setSelectedTenantId] = useState("tenant-1");
   const [query, setQuery] = useState("");
+  const [syncStatus, setSyncStatus] = useState("Using local demo data");
   const [paymentDraft, setPaymentDraft] = useState({
     amount: "450",
     installmentLabel: "First June installment",
@@ -485,6 +495,28 @@ export function App() {
   });
   const [newTenantDraft, setNewTenantDraft] = useState<NewTenantDraft>(defaultNewTenantDraft);
   const [newTenantError, setNewTenantError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    loadAppState()
+      .then((state) => {
+        if (cancelled) return;
+        setProperties(state.properties);
+        setTenants(state.tenants);
+        setPayments(state.payments);
+        setPromises(state.promises);
+        setReminders(state.reminders);
+        setDocuments(state.documents);
+        setSelectedTenantId(state.tenants[0]?.id ?? "tenant-1");
+        setSyncStatus("Connected to SQLite database");
+      })
+      .catch(() => {
+        if (!cancelled) setSyncStatus("API offline - using local demo data");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const selectedTenant = tenants.find((tenant) => tenant.id === selectedTenantId) ?? tenants[0];
   const selectedProperty = properties.find((property) => property.id === selectedTenant.propertyId) ?? properties[0];
@@ -517,52 +549,58 @@ export function App() {
   function recordPayment() {
     const amount = Number(paymentDraft.amount);
     if (!Number.isFinite(amount) || amount <= 0) return;
+    const payment = {
+      id: `pay-${Date.now()}`,
+      tenantId: selectedTenant.id,
+      installmentLabel: paymentDraft.installmentLabel,
+      amount,
+      method: paymentDraft.method,
+      receivedDate: toInputDate(today),
+      note: paymentDraft.note,
+      enteredBy: "Landlord",
+      timestamp: new Date().toISOString()
+    };
     setPayments((current) => [
-      {
-        id: `pay-${Date.now()}`,
-        tenantId: selectedTenant.id,
-        installmentLabel: paymentDraft.installmentLabel,
-        amount,
-        method: paymentDraft.method,
-        receivedDate: toInputDate(today),
-        note: paymentDraft.note,
-        enteredBy: "Landlord",
-        timestamp: new Date().toISOString()
-      },
+      payment,
       ...current
     ]);
+    void apiPost("/api/payments", payment);
   }
 
   function recordPromise() {
     const promisedAmount = Number(promiseDraft.amount);
     if (!Number.isFinite(promisedAmount) || promisedAmount <= 0) return;
+    const promise = {
+      id: `promise-${Date.now()}`,
+      tenantId: selectedTenant.id,
+      promisedAmount,
+      promisedDate: promiseDraft.date,
+      note: promiseDraft.note,
+      status: "open" as const
+    };
     setPromises((current) => [
-      {
-        id: `promise-${Date.now()}`,
-        tenantId: selectedTenant.id,
-        promisedAmount,
-        promisedDate: promiseDraft.date,
-        note: promiseDraft.note,
-        status: "open"
-      },
+      promise,
       ...current
     ]);
+    void apiPost("/api/promises", promise);
   }
 
   function queueReminder(tenant: Tenant, state?: InstallmentState) {
     const property = properties.find((item) => item.id === tenant.propertyId);
     const target = state ?? installmentStates.find((item) => item.tenant.id === tenant.id && item.balance > 0);
     const message = buildReminderMessage(tenant, property, target);
+    const reminder = {
+      id: `reminder-${Date.now()}`,
+      tenantId: tenant.id,
+      message,
+      sendDate: toInputDate(today),
+      status: "draft" as const
+    };
     setReminders((current) => [
-      {
-        id: `reminder-${Date.now()}`,
-        tenantId: tenant.id,
-        message,
-        sendDate: toInputDate(today),
-        status: "draft"
-      },
+      reminder,
       ...current
     ]);
+    void apiPost("/api/reminders", reminder);
   }
 
   function generateDocuments() {
@@ -576,6 +614,7 @@ export function App() {
         ...current
       ];
     });
+    void apiPost("/api/documents", { documents: nextDocuments });
   }
 
   function approveDocument(documentId: string) {
@@ -586,6 +625,7 @@ export function App() {
           : document
       )
     );
+    void apiPatch(`/api/documents/${documentId}/approve`);
   }
 
   function sendDocument(documentId: string) {
@@ -596,6 +636,7 @@ export function App() {
           : document
       )
     );
+    void apiPatch(`/api/documents/${documentId}/send`);
   }
 
   function updatePlanType(planType: PlanType) {
@@ -674,6 +715,7 @@ export function App() {
     };
     setProperties((current) => [...current, nextProperty]);
     setTenants((current) => [...current, nextTenant]);
+    void apiPost("/api/tenants", { property: nextProperty, tenant: nextTenant });
     setSelectedTenantId(tenantId);
     setNewTenantDraft(defaultNewTenantDraft);
     setNewTenantError("");
@@ -733,6 +775,7 @@ export function App() {
           <strong>{money(monthTotals.balance)}</strong>
           <small>Open balance across active tenants</small>
         </div>
+        <div className="sync-pill">{syncStatus}</div>
       </aside>
 
       <section className="workspace">
@@ -1825,4 +1868,22 @@ function formatWindow(start: Date, end: Date) {
 
 function toInputDate(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+async function loadAppState(): Promise<AppState> {
+  const response = await fetch("/api/state");
+  if (!response.ok) throw new Error("Unable to load app state");
+  return response.json() as Promise<AppState>;
+}
+
+async function apiPost(path: string, body: unknown) {
+  await fetch(path, {
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+    method: "POST"
+  });
+}
+
+async function apiPatch(path: string) {
+  await fetch(path, { method: "PATCH" });
 }
