@@ -26,6 +26,29 @@ pnpm dev:all
 
 This starts the frontend on `http://localhost:5184`, the backend API on `http://localhost:5185`, and the local SQLite database at `data/rentflex.sqlite`.
 
+## Environment Variables
+
+Copy `.env.example` to `.env` for local development.
+
+```bash
+RENTFLEX_WEB_PORT=5184
+RENTFLEX_API_PORT=5185
+VITE_API_PROXY_TARGET=http://127.0.0.1:5185
+RENTFLEX_DB_PATH=data/rentflex.sqlite
+```
+
+`RENTFLEX_WEB_PORT` controls the Vite dev server, `RENTFLEX_API_PORT` controls the Node API, `VITE_API_PROXY_TARGET` controls the frontend `/api` proxy, and `RENTFLEX_DB_PATH` controls the SQLite file location.
+
+## Verify Routes
+
+With the dev server running:
+
+```bash
+pnpm verify:routes
+```
+
+This checks the configured frontend/API variables, all sidebar workflow targets, all internal app views, `GET /api/health`, `GET /api/state`, and the frontend root page.
+
 ## Build
 
 ```bash
@@ -38,6 +61,7 @@ The backend uses Node's built-in SQLite module and stores app records in `data/r
 
 API routes:
 
+- `GET /api/health`
 - `GET /api/state`
 - `POST /api/tenants`
 - `POST /api/payments`

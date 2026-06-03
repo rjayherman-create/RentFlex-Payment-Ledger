@@ -1,14 +1,21 @@
 import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { loadEnvFiles } from "./env.mjs";
 import { documentsSeed, paymentsSeed, propertiesSeed, promisesSeed, tenantsSeed } from "./seed.mjs";
 
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
+loadEnvFiles(rootDir);
+
 const dataDir = join(rootDir, "data");
 mkdirSync(dataDir, { recursive: true });
 
-export const db = new DatabaseSync(join(dataDir, "rentflex.sqlite"));
+const dbPath = process.env.RENTFLEX_DB_PATH
+  ? isAbsolute(process.env.RENTFLEX_DB_PATH) ? process.env.RENTFLEX_DB_PATH : join(rootDir, process.env.RENTFLEX_DB_PATH)
+  : join(dataDir, "rentflex.sqlite");
+
+export const db = new DatabaseSync(dbPath);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS app_records (

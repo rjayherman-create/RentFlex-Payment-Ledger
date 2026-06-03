@@ -4,9 +4,12 @@ import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { getState, patchRecord, upsertRecord } from "./db.mjs";
+import { loadEnvFiles } from "./env.mjs";
 
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
-const port = Number(process.env.PORT ?? 5185);
+loadEnvFiles(rootDir);
+
+const port = Number(process.env.RENTFLEX_API_PORT ?? process.env.PORT ?? 5185);
 
 const server = createServer(async (req, res) => {
   try {
@@ -26,6 +29,10 @@ server.listen(port, () => {
 
 async function handleApi(req, res) {
   const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+  if (req.method === "OPTIONS") {
+    sendNoContent(res);
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/api/health") {
     sendJson(res, 200, { ok: true });
     return;
@@ -92,6 +99,15 @@ function sendJson(res, status, body) {
     "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS"
   });
   res.end(JSON.stringify(body));
+}
+
+function sendNoContent(res) {
+  res.writeHead(204, {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS"
+  });
+  res.end();
 }
 
 async function serveStatic(req, res) {
