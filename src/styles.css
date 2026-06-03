@@ -739,8 +739,20 @@ nav {
 
 .wide-field,
 .checkbox-grid,
-.plan-row-list {
+.plan-row-list,
+.form-error {
   grid-column: 1 / -1;
+}
+
+.form-error {
+  margin: 0;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #991b1b;
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 750;
 }
 
 .checkbox-grid {

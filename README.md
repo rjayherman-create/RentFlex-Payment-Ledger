@@ -10,12 +10,13 @@ The app automatically creates rent invoices and balance statements from open led
 
 ## Core Workflows
 
-- Create tenant profiles with contact, emergency contact, lease, property, account type, rent details, payment methods, memo, and notes.
+- Create tenant profiles with contact, emergency contact, Start of Lease, property, account type, rent details, payment methods, memo, and notes.
 - Build ongoing payment plans with monthly, semi-monthly, weekly, bi-weekly, or custom schedules.
 - Track payment methods including Cash App, Chime, Zelle, Venmo, PayPal, ACH bank transfer, cash, money order, and other.
 - Configure reminders for 7 days before, 3 days before, due today, 3 days late, and 7 days late.
 - Track delivery channels for SMS, email, push notification, and in-app notification.
 - Generate an automatic ledger showing `Date | Description | Charge | Payment | Balance`.
+- Require `startOfLease` for active tenants, validate it as a real date, and prevent future lease start dates.
 
 ## Run
 

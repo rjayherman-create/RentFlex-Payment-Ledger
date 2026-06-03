@@ -84,7 +84,7 @@ interface Tenant {
   chimePhone: string;
   chimeEmail: string;
   backupPaymentMethod: PaymentMethod;
-  leaseStartDate: string;
+  startOfLease: string;
   leaseEndDate: string;
   moveInDate: string;
   securityDeposit: number;
@@ -176,7 +176,7 @@ interface NewTenantDraft {
   zip: string;
   unitNumber: string;
   moveInDate: string;
-  leaseStartDate: string;
+  startOfLease: string;
   leaseEndDate: string;
   accountType: AccountType;
   monthlyRent: string;
@@ -230,7 +230,7 @@ const tenantsSeed: Tenant[] = [
     chimeEmail: "john.d@example.com",
     backupPaymentMethod: "money_order",
     moveInDate: "2025-09-01",
-    leaseStartDate: "2025-09-01",
+    startOfLease: "2026-03-01",
     leaseEndDate: "2026-08-31",
     securityDeposit: 900,
     lateFee: 50,
@@ -271,7 +271,7 @@ const tenantsSeed: Tenant[] = [
     chimeEmail: "maria.s@example.com",
     backupPaymentMethod: "cash",
     moveInDate: "2024-12-15",
-    leaseStartDate: "2024-12-15",
+    startOfLease: "2024-12-15",
     leaseEndDate: "2026-12-14",
     securityDeposit: 850,
     lateFee: 40,
@@ -312,7 +312,7 @@ const tenantsSeed: Tenant[] = [
     chimeEmail: "robert.k@example.com",
     backupPaymentMethod: "money_order",
     moveInDate: "2026-01-01",
-    leaseStartDate: "2026-01-01",
+    startOfLease: "2026-01-01",
     leaseEndDate: "2026-12-31",
     securityDeposit: 1000,
     lateFee: 35,
@@ -435,7 +435,7 @@ const defaultNewTenantDraft: NewTenantDraft = {
   zip: "",
   unitNumber: "",
   moveInDate: "2026-06-03",
-  leaseStartDate: "2026-06-03",
+  startOfLease: "2026-03-01",
   leaseEndDate: "2027-06-02",
   accountType: "cash_paying",
   monthlyRent: "900",
@@ -484,6 +484,7 @@ export function App() {
     note: "Tenant promised a follow-up payment."
   });
   const [newTenantDraft, setNewTenantDraft] = useState<NewTenantDraft>(defaultNewTenantDraft);
+  const [newTenantError, setNewTenantError] = useState("");
 
   const selectedTenant = tenants.find((tenant) => tenant.id === selectedTenantId) ?? tenants[0];
   const selectedProperty = properties.find((property) => property.id === selectedTenant.propertyId) ?? properties[0];
@@ -608,6 +609,11 @@ export function App() {
   }
 
   function createTenantProfile() {
+    if (!isValidPastOrTodayDate(newTenantDraft.startOfLease)) {
+      setNewTenantError("Start of Lease is required, must be a valid date, and cannot be in the future.");
+      setView("new_tenant");
+      return;
+    }
     const monthlyRent = numberFromDraft(newTenantDraft.monthlyRent);
     const propertyId = `prop-${Date.now()}`;
     const tenantId = `tenant-${Date.now()}`;
@@ -647,7 +653,7 @@ export function App() {
       chimeEmail: newTenantDraft.chimeEmail.trim(),
       backupPaymentMethod: newTenantDraft.backupPaymentMethod,
       moveInDate: newTenantDraft.moveInDate,
-      leaseStartDate: newTenantDraft.leaseStartDate,
+      startOfLease: newTenantDraft.startOfLease,
       leaseEndDate: newTenantDraft.leaseEndDate,
       securityDeposit: numberFromDraft(newTenantDraft.securityDeposit),
       lateFee: numberFromDraft(newTenantDraft.lateFee),
@@ -670,6 +676,7 @@ export function App() {
     setTenants((current) => [...current, nextTenant]);
     setSelectedTenantId(tenantId);
     setNewTenantDraft(defaultNewTenantDraft);
+    setNewTenantError("");
     setView("tenants");
   }
 
@@ -782,6 +789,7 @@ export function App() {
           <NewTenantView
             createTenantProfile={createTenantProfile}
             draft={newTenantDraft}
+            error={newTenantError}
             setDraft={setNewTenantDraft}
           />
         ) : null}
@@ -950,6 +958,8 @@ function TenantsView(props: {
             <span><Home size={16} /> {props.property.address}</span>
             <span><Mail size={16} /> {props.selectedTenant.email}</span>
             <span><Phone size={16} /> {props.selectedTenant.phone}</span>
+            <span><CalendarClock size={16} /> Lease Start: {friendlyDate(props.selectedTenant.startOfLease)}</span>
+            <span><UserRound size={16} /> {accountTypeLabel(props.selectedTenant.accountType)}</span>
             <span><WalletCards size={16} /> Preferred: {methodLabel(props.selectedTenant.preferredPaymentMethod)}</span>
           </div>
           <strong>{money(props.selectedBalance)}</strong>
@@ -1059,6 +1069,7 @@ function TenantsView(props: {
 function NewTenantView(props: {
   createTenantProfile: () => void;
   draft: NewTenantDraft;
+  error: string;
   setDraft: (draft: NewTenantDraft) => void;
 }) {
   const updateDraft = (patch: Partial<NewTenantDraft>) => props.setDraft({ ...props.draft, ...patch });
@@ -1082,8 +1093,10 @@ function NewTenantView(props: {
           <label><span>Last Name</span><input value={props.draft.lastName} onChange={(event) => updateDraft({ lastName: event.target.value })} /></label>
           <label><span>Phone Number</span><input value={props.draft.phone} onChange={(event) => updateDraft({ phone: event.target.value })} /></label>
           <label><span>Email Address</span><input value={props.draft.email} onChange={(event) => updateDraft({ email: event.target.value })} /></label>
+          <label><span>Start of Lease</span><input max={toInputDate(today)} placeholder="MM/DD/YYYY" required type="date" value={props.draft.startOfLease} onChange={(event) => updateDraft({ startOfLease: event.target.value })} /></label>
           <label><span>Emergency Contact</span><input value={props.draft.emergencyContact} onChange={(event) => updateDraft({ emergencyContact: event.target.value })} /></label>
           <label><span>Emergency Phone</span><input value={props.draft.emergencyPhone} onChange={(event) => updateDraft({ emergencyPhone: event.target.value })} /></label>
+          {props.error ? <p className="form-error">{props.error}</p> : null}
         </FormSection>
 
         <FormSection title="Property Information">
@@ -1093,7 +1106,6 @@ function NewTenantView(props: {
           <label><span>ZIP Code</span><input value={props.draft.zip} onChange={(event) => updateDraft({ zip: event.target.value })} /></label>
           <label><span>Unit Number</span><input value={props.draft.unitNumber} onChange={(event) => updateDraft({ unitNumber: event.target.value })} /></label>
           <label><span>Move-In Date</span><input type="date" value={props.draft.moveInDate} onChange={(event) => updateDraft({ moveInDate: event.target.value })} /></label>
-          <label><span>Lease Start</span><input type="date" value={props.draft.leaseStartDate} onChange={(event) => updateDraft({ leaseStartDate: event.target.value })} /></label>
           <label><span>Lease End</span><input type="date" value={props.draft.leaseEndDate} onChange={(event) => updateDraft({ leaseEndDate: event.target.value })} /></label>
         </FormSection>
 
@@ -1775,6 +1787,12 @@ function deliveryLabel(delivery: DeliveryMethod) {
 function numberFromDraft(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isValidPastOrTodayDate(value: string) {
+  if (!value) return false;
+  const date = new Date(`${value}T00:00:00`);
+  return !Number.isNaN(date.getTime()) && date <= today;
 }
 
 function money(value: number) {
