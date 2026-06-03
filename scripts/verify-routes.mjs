@@ -41,18 +41,49 @@ const workflowNavViews = [
 ];
 
 const failures = [];
+const declaredViews = extractDeclaredViews(appSource);
+const renderBranches = extractMatches(appSource, /view === "([^"]+)"/g);
+const setViewTargets = extractMatches(appSource, /setView\("([^"]+)"\)/g);
+const navTargets = extractMatches(appSource, /id: "([^"]+)"/g).filter((target) => declaredViews.includes(target));
+const hrefTargets = extractMatches(appSource, /href=["']([^"']+)["']/g);
 
 for (const view of expectedViews) {
-  if (!appSource.includes(`"${view}"`)) failures.push(`Missing ViewId reference: ${view}`);
-  if (!appSource.includes(`view === "${view}"`)) failures.push(`Missing render branch: ${view}`);
+  if (!declaredViews.includes(view)) failures.push(`Missing ViewId declaration: ${view}`);
+  if (!renderBranches.includes(view)) failures.push(`Missing render branch: ${view}`);
 }
 
 for (const view of workflowNavViews) {
-  if (!appSource.includes(`id: "${view}"`)) failures.push(`Missing sidebar workflow target: ${view}`);
+  if (!navTargets.includes(view)) failures.push(`Missing sidebar workflow target: ${view}`);
 }
 
-if (appSource.includes(`id: "new_tenant"`)) {
+for (const view of setViewTargets) {
+  if (!declaredViews.includes(view)) failures.push(`setView target is not declared in ViewId: ${view}`);
+  if (!renderBranches.includes(view)) failures.push(`setView target has no render branch: ${view}`);
+}
+
+for (const view of navTargets) {
+  if (!declaredViews.includes(view)) failures.push(`Sidebar target is not declared in ViewId: ${view}`);
+  if (!renderBranches.includes(view)) failures.push(`Sidebar target has no render branch: ${view}`);
+}
+
+if (navTargets.includes("new_tenant")) {
   failures.push("New Tenant should not be a sidebar nav item.");
+}
+
+const expectedClickableLabels = [
+  "New Tenant",
+  "Record Payment",
+  "Send Reminder",
+  "Create Statement",
+  "Open Ledger"
+];
+
+for (const label of expectedClickableLabels) {
+  if (!appSource.includes(label)) failures.push(`Missing clickable action label: ${label}`);
+}
+
+for (const href of hrefTargets) {
+  if (!href || href === "#") failures.push(`Invalid href target: ${href || "(empty)"}`);
 }
 
 await checkJson(`${apiBaseUrl}/api/health`, "GET /api/health", (body) => body.ok === true);
@@ -78,8 +109,24 @@ console.log(JSON.stringify({
   frontend: `http://localhost:${webPort}`,
   api: apiBaseUrl,
   views: expectedViews.length,
-  sidebarWorkflowItems: workflowNavViews.length
+  sidebarWorkflowItems: workflowNavViews.length,
+  setViewTargets: unique(setViewTargets).length,
+  hrefTargets: unique(hrefTargets).length
 }, null, 2));
+
+function extractDeclaredViews(source) {
+  const match = source.match(/type ViewId = ([^;]+);/);
+  if (!match) return [];
+  return extractMatches(match[1], /"([^"]+)"/g);
+}
+
+function extractMatches(source, pattern) {
+  return [...source.matchAll(pattern)].map((match) => match[1]);
+}
+
+function unique(values) {
+  return Array.from(new Set(values));
+}
 
 async function checkJson(url, label, validate) {
   try {
