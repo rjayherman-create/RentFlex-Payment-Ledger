@@ -481,6 +481,7 @@ export function App() {
   const [documents, setDocuments] = useState<RentDocument[]>(documentSeed);
   const [selectedTenantId, setSelectedTenantId] = useState("tenant-1");
   const [query, setQuery] = useState("");
+  const [propertyFilter, setPropertyFilter] = useState("all");
   const [syncStatus, setSyncStatus] = useState("Using local demo data");
   const [paymentDraft, setPaymentDraft] = useState({
     amount: "450",
@@ -526,11 +527,21 @@ export function App() {
     [payments, properties, tenants]
   );
 
+  const filteredInstallmentStates = useMemo(() => {
+    const normalizedQuery = query.toLowerCase().trim();
+    return installmentStates.filter((state) => {
+      const propertyMatches = propertyFilter === "all" || state.property.id === propertyFilter;
+      const textMatches = !normalizedQuery || `${state.tenant.firstName} ${state.tenant.lastName} ${state.property.address} ${state.tenant.phone} ${state.tenant.cashAppTag} ${state.tenant.chimeSign}`.toLowerCase().includes(normalizedQuery);
+      return propertyMatches && textMatches;
+    });
+  }, [installmentStates, propertyFilter, query]);
+
   const monthTotals = useMemo(() => {
-    const expected = installmentStates.reduce((sum, item) => sum + item.expectedAmount, 0);
-    const paid = payments.reduce((sum, payment) => sum + payment.amount, 0);
+    const expected = filteredInstallmentStates.reduce((sum, item) => sum + item.expectedAmount, 0);
+    const visibleTenantIds = new Set(filteredInstallmentStates.map((state) => state.tenant.id));
+    const paid = payments.filter((payment) => visibleTenantIds.has(payment.tenantId)).reduce((sum, payment) => sum + payment.amount, 0);
     return { expected, paid, balance: expected - paid };
-  }, [installmentStates, payments]);
+  }, [filteredInstallmentStates, payments]);
 
   const visibleTenants = tenants.filter((tenant) => {
     const property = properties.find((item) => item.id === tenant.propertyId);
@@ -544,6 +555,12 @@ export function App() {
     drafts: documents.filter((document) => document.status === "draft").length,
     approved: documents.filter((document) => document.status === "approved").length,
     sent: documents.filter((document) => document.status === "sent").length
+  };
+  const dashboardStats = {
+    activeTenants: tenants.filter((tenant) => tenant.active).length,
+    leaseExpiring: tenants.filter((tenant) => daysUntil(tenant.leaseEndDate) >= 0 && daysUntil(tenant.leaseEndDate) <= 90).length,
+    rentOverdue: filteredInstallmentStates.filter((state) => state.status === "late" || state.status === "missed" || state.status === "partial").length,
+    pendingDocuments: documentStats.drafts + documentStats.approved
   };
 
   function recordPayment() {
@@ -779,10 +796,23 @@ export function App() {
       </aside>
 
       <section className="workspace">
+        <div className="utility-bar">
+          <label className="global-search">
+            <Search size={18} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search tenants, properties, phone, Cash App, Chime..." />
+          </label>
+          <select value={propertyFilter} onChange={(event) => setPropertyFilter(event.target.value)} aria-label="Filter by property">
+            <option value="all">All Properties</option>
+            {properties.map((property) => (
+              <option key={property.id} value={property.id}>{property.address}</option>
+            ))}
+          </select>
+        </div>
+
         <header className="topbar">
           <div>
-            <p className="eyebrow">Rent reminder, invoice, and ledger workflow</p>
-            <h1>Auto-create rent invoices and statements, approve them, then send by email or text.</h1>
+            <p className="eyebrow">Summary</p>
+            <h1>Flexible rent plans, reminders, statements, and ledger proof in one workflow.</h1>
           </div>
           <button className="primary-button" onClick={generateDocuments} type="button">
             <FileText size={18} /> Create Drafts
@@ -790,22 +820,22 @@ export function App() {
         </header>
 
         <section className="metric-grid" aria-label="Monthly summary">
-          <MetricCard icon={DollarSign} label="Expected" value={money(monthTotals.expected)} tone="blue" />
-          <MetricCard icon={CheckCircle2} label="Received" value={money(monthTotals.paid)} tone="green" />
-          <MetricCard icon={AlertTriangle} label="Open Balance" value={money(monthTotals.balance)} tone="orange" />
-          <MetricCard icon={FileText} label="Document Drafts" value={String(documentStats.drafts)} tone="purple" />
+          <MetricCard icon={DollarSign} label="Open Balance" value={money(monthTotals.balance)} tone="blue" />
+          <MetricCard icon={CalendarClock} label="Lease Expiring" value={String(dashboardStats.leaseExpiring)} tone="yellow" />
+          <MetricCard icon={AlertTriangle} label="Rent Overdue" value={String(dashboardStats.rentOverdue)} tone="red" />
+          <MetricCard icon={FileText} label="Pending Statements" value={String(dashboardStats.pendingDocuments)} tone="green" />
         </section>
 
         {view === "dashboard" ? (
           <DashboardView
-            installmentStates={installmentStates}
+            filteredInstallmentStates={filteredInstallmentStates}
             onSelectTenant={setSelectedTenantId}
             onViewLedger={() => setView("ledger")}
             queueReminder={queueReminder}
           />
         ) : null}
 
-        {view === "properties" ? <PropertiesView properties={properties} tenants={tenants} installmentStates={installmentStates} /> : null}
+        {view === "properties" ? <PropertiesView properties={properties} tenants={tenants} installmentStates={filteredInstallmentStates} /> : null}
 
         {view === "tenants" ? (
           <TenantsView
@@ -847,7 +877,7 @@ export function App() {
             properties={properties}
           />
         ) : null}
-        {view === "ledger" ? <LedgerView installmentStates={installmentStates} payments={payments} exportCsv={exportCsv} /> : null}
+        {view === "ledger" ? <LedgerView installmentStates={filteredInstallmentStates} payments={payments} exportCsv={exportCsv} /> : null}
         {view === "reminders" ? <ReminderView reminders={reminders} tenants={tenants} queueReminder={queueReminder} /> : null}
         {view === "late" ? <LateView installmentStates={installmentStates} promises={promises} queueReminder={queueReminder} /> : null}
         {view === "reports" ? <ReportsView installmentStates={installmentStates} payments={payments} exportCsv={exportCsv} /> : null}
@@ -858,13 +888,13 @@ export function App() {
 }
 
 function DashboardView(props: {
-  installmentStates: InstallmentState[];
+  filteredInstallmentStates: InstallmentState[];
   onSelectTenant: (id: string) => void;
   onViewLedger: () => void;
   queueReminder: (tenant: Tenant, state?: InstallmentState) => void;
 }) {
-  const tenantSummaries = summarizeByTenant(props.installmentStates);
-  const dueNow = props.installmentStates.filter((item) => item.status === "window_open" || item.status === "partial" || item.status === "late");
+  const tenantSummaries = summarizeByTenant(props.filteredInstallmentStates);
+  const dueNow = props.filteredInstallmentStates.filter((item) => item.status === "window_open" || item.status === "partial" || item.status === "late");
 
   return (
     <div className="content-grid dashboard-grid">
@@ -876,7 +906,7 @@ function DashboardView(props: {
               <div className={`status-dot ${item.status}`} />
               <div>
                 <strong>{item.property.address}</strong>
-                <span>{item.tenant.firstName} {item.tenant.lastInitial} · {planLabel(item.tenant.plan.planType)}</span>
+                <span>{item.tenant.firstName} {item.tenant.lastInitial} - {planLabel(item.tenant.plan.planType)}</span>
               </div>
               <div className="money-stack">
                 <strong>{money(item.paid)}</strong>
@@ -898,7 +928,7 @@ function DashboardView(props: {
             <article key={`${item.tenant.id}-${item.label}`}>
               <div>
                 <strong>{item.tenant.firstName} {item.tenant.lastInitial}</strong>
-                <span>{item.label} · {formatWindow(item.windowStart, item.windowEnd)}</span>
+                <span>{item.label} - {formatWindow(item.windowStart, item.windowEnd)}</span>
               </div>
               <b>{money(item.balance)}</b>
               <button className="secondary-button compact" onClick={() => props.queueReminder(item.tenant, item)} type="button">
@@ -1032,7 +1062,7 @@ function TenantsView(props: {
               <article key={item.label}>
                 <div>
                   <strong>{item.label}</strong>
-                  <span>{formatWindow(item.windowStart, item.windowEnd)} · Grace through {shortDate(item.graceEnd)}</span>
+                  <span>{formatWindow(item.windowStart, item.windowEnd)} - Grace through {shortDate(item.graceEnd)}</span>
                 </div>
                 <b>{money(item.expectedAmount)}</b>
                 <StatusPill status={item.status} />
@@ -1101,7 +1131,7 @@ function TenantsView(props: {
 
         <div className="promise-strip">
           {tenantPromises.map((promise) => (
-            <span key={promise.id}>{money(promise.promisedAmount)} on {friendlyDate(promise.promisedDate)} · {promise.status}</span>
+            <span key={promise.id}>{money(promise.promisedAmount)} on {friendlyDate(promise.promisedDate)} - {promise.status}</span>
           ))}
         </div>
       </section>
@@ -1400,7 +1430,7 @@ function LedgerView(props: { installmentStates: InstallmentState[]; payments: Pa
         {props.payments.map((payment) => (
           <article key={payment.id}>
             <strong>{money(payment.amount)}</strong>
-            <span>{payment.installmentLabel} · {friendlyDate(payment.receivedDate)} · {methodLabel(payment.method)}</span>
+            <span>{payment.installmentLabel} - {friendlyDate(payment.receivedDate)} - {methodLabel(payment.method)}</span>
             <small>{payment.note}</small>
           </article>
         ))}
@@ -1430,7 +1460,7 @@ function ReminderView(props: { reminders: ReminderLog[]; tenants: Tenant[]; queu
               <article key={reminder.id}>
                 <div>
                   <strong>{tenant?.firstName} {tenant?.lastInitial}</strong>
-                  <span>{friendlyDate(reminder.sendDate)} · {reminder.status}</span>
+                  <span>{friendlyDate(reminder.sendDate)} - {reminder.status}</span>
                 </div>
                 <p>{reminder.message}</p>
               </article>
@@ -1454,7 +1484,7 @@ function LateView(props: { installmentStates: InstallmentState[]; promises: Prom
             <article key={`${item.tenant.id}-${item.label}`}>
               <div>
                 <StatusPill status={item.status} />
-                <h3>{item.tenant.firstName} {item.tenant.lastInitial} · {item.property.address}</h3>
+                <h3>{item.tenant.firstName} {item.tenant.lastInitial} - {item.property.address}</h3>
                 <p>{item.label}: {money(item.balance)} remaining after window {formatWindow(item.windowStart, item.windowEnd)}.</p>
                 {openPromises.map((promise) => <span key={promise.id}>Promise: {money(promise.promisedAmount)} on {friendlyDate(promise.promisedDate)}</span>)}
               </div>
@@ -1483,7 +1513,7 @@ function ReportsView(props: { installmentStates: InstallmentState[]; payments: P
           <article className="report-card" key={row.tenant.id}>
             <StatusPill status={row.status} />
             <h3>{row.property.address}</h3>
-            <p>{row.tenant.firstName} {row.tenant.lastInitial} · {planLabel(row.tenant.plan.planType)}</p>
+            <p>{row.tenant.firstName} {row.tenant.lastInitial} - {planLabel(row.tenant.plan.planType)}</p>
             <div>
               <span>Expected <strong>{money(row.expected)}</strong></span>
               <span>Received <strong>{money(row.paid)}</strong></span>
@@ -1561,7 +1591,7 @@ function StatusPill({ status }: { status: PaymentStatus | DocumentStatus | "inac
 }
 
 const navItems: Array<{ id: ViewId; label: string; icon: typeof Home }> = [
-  { id: "dashboard", label: "Dashboard", icon: ClipboardList },
+  { id: "dashboard", label: "Summary", icon: ClipboardList },
   { id: "properties", label: "Properties", icon: Home },
   { id: "tenants", label: "Tenants", icon: UserRound },
   { id: "new_tenant", label: "New Tenant", icon: Plus },
@@ -1852,6 +1882,12 @@ function addDays(date: Date, days: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
   return next;
+}
+
+function daysUntil(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return Number.POSITIVE_INFINITY;
+  return Math.ceil((date.getTime() - today.getTime()) / 86400000);
 }
 
 function shortDate(date: Date) {
