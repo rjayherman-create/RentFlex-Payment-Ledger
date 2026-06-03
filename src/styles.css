@@ -33,16 +33,16 @@ button:disabled {
 .app-shell {
   display: grid;
   min-height: 100vh;
-  grid-template-columns: 286px minmax(0, 1fr);
+  grid-template-columns: 312px minmax(0, 1fr);
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 18px;
   border-right: 1px solid #d8e0ea;
   background: #ffffff;
-  padding: 22px;
+  padding: 22px 18px;
 }
 
 .brand {
@@ -77,20 +77,44 @@ button:disabled {
 
 nav {
   display: grid;
-  gap: 7px;
+  gap: 16px;
+}
+
+.nav-section {
+  display: grid;
+  gap: 5px;
+}
+
+.nav-section-title {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px;
+  color: #006b3f;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.nav-section-title::after {
+  content: "";
+  height: 1px;
+  background: #dce6e0;
 }
 
 .nav-item {
   display: grid;
-  grid-template-columns: 22px 1fr auto;
+  grid-template-columns: 30px 1fr auto;
   align-items: center;
   gap: 10px;
-  min-height: 44px;
+  min-height: 46px;
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #475467;
-  padding: 9px 10px;
+  color: #172033;
+  padding: 9px 12px;
   text-align: left;
 }
 
@@ -111,14 +135,40 @@ nav {
   font-size: 12px;
 }
 
-.sidebar-summary {
+.quick-actions {
   display: grid;
-  gap: 4px;
+  gap: 5px;
   margin-top: auto;
   border: 1px solid #c7d7cc;
   border-radius: 8px;
   background: #f0f7f3;
-  padding: 14px;
+  padding: 12px;
+}
+
+.quick-actions strong {
+  color: #006b3f;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.quick-actions button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  border: 1px solid #c7d7cc;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #006b3f;
+  padding: 8px 11px;
+  font-weight: 850;
+  text-align: left;
+}
+
+.quick-actions button:hover {
+  border-color: #154734;
+  background: #ffffff;
 }
 
 .sync-pill {
@@ -129,16 +179,6 @@ nav {
   padding: 10px 12px;
   font-size: 12px;
   font-weight: 800;
-}
-
-.sidebar-summary span,
-.sidebar-summary small {
-  color: #476353;
-}
-
-.sidebar-summary strong {
-  color: #154734;
-  font-size: 30px;
 }
 
 .workspace {
@@ -176,15 +216,68 @@ nav {
   color: #172033;
 }
 
-.utility-bar select {
-  min-height: 42px;
-  min-width: 190px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  background: #ffffff;
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.notification-button,
+.user-menu {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
   color: #172033;
-  padding: 0 12px;
-  font-weight: 750;
+}
+
+.notification-button {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+.notification-button b {
+  position: absolute;
+  top: 1px;
+  right: 4px;
+  min-width: 18px;
+  border-radius: 999px;
+  background: #b42318;
+  color: #ffffff;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.user-menu {
+  gap: 10px;
+  min-height: 44px;
+  padding-left: 14px;
+  border-left: 1px solid #cbd5e1;
+}
+
+.user-menu > span {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #154734;
+  font-weight: 900;
+}
+
+.user-menu strong,
+.user-menu small {
+  display: block;
+  text-align: left;
+}
+
+.user-menu small {
+  color: #667085;
+  font-weight: 600;
 }
 
 .topbar {
@@ -200,6 +293,11 @@ nav {
   margin: 0;
   font-size: 32px;
   line-height: 1.08;
+}
+
+.topbar p {
+  margin: 8px 0 0;
+  color: #475467;
 }
 
 .eyebrow {
@@ -254,7 +352,7 @@ nav {
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 16px;
 }
@@ -504,6 +602,57 @@ nav {
   margin-top: 3px;
   color: #667085;
   font-size: 13px;
+}
+
+.workflow-table {
+  display: grid;
+  gap: 0;
+  overflow-x: auto;
+}
+
+.workflow-table-head,
+.rent-due-row,
+.payment-plan-row {
+  display: grid;
+  align-items: center;
+  gap: 14px;
+  min-width: 820px;
+}
+
+.workflow-table-head {
+  border-bottom: 1px solid #d8e0ea;
+  color: #475467;
+  padding: 0 0 11px;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.rent-due-row {
+  grid-template-columns: 1.05fr 1.4fr 0.9fr 0.8fr 0.8fr;
+}
+
+.payment-plan-row {
+  grid-template-columns: 1fr 1.25fr 1.05fr 1.05fr 0.7fr;
+}
+
+article.rent-due-row,
+article.payment-plan-row {
+  border-bottom: 1px solid #edf1f5;
+  padding: 14px 0;
+}
+
+.rent-due-row strong,
+.rent-due-row small,
+.payment-plan-row strong,
+.payment-plan-row small {
+  display: block;
+}
+
+.rent-due-row small,
+.payment-plan-row small {
+  margin-top: 3px;
+  color: #667085;
 }
 
 .property-grid,
@@ -1132,10 +1281,6 @@ tr:last-child td {
     border-right: 0;
     border-bottom: 1px solid #d8e0ea;
   }
-
-  nav {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 720px) {
@@ -1152,8 +1297,12 @@ tr:last-child td {
   }
 
   .global-search,
-  .utility-bar select {
+  .top-actions {
     width: 100%;
+  }
+
+  .top-actions {
+    flex-wrap: wrap;
   }
 
   .topbar h1 {

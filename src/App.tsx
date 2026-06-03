@@ -4,6 +4,7 @@ import {
   CalendarClock,
   CheckCircle2,
   ClipboardList,
+  Clock,
   DollarSign,
   Download,
   FileText,
@@ -17,6 +18,7 @@ import {
   Search,
   Send,
   Settings,
+  UsersRound,
   UserRound,
   WalletCards
 } from "lucide-react";
@@ -25,7 +27,7 @@ import { useEffect, useMemo, useState } from "react";
 type PlanType = "monthly" | "twice_monthly" | "weekly" | "bi_weekly" | "custom";
 type PaymentMethod = "cash_app" | "chime" | "zelle" | "venmo" | "paypal" | "ach" | "cash" | "money_order" | "other";
 type PaymentStatus = "paid" | "window_open" | "partial" | "late" | "upcoming" | "missed";
-type ViewId = "dashboard" | "properties" | "tenants" | "new_tenant" | "documents" | "ledger" | "reminders" | "late" | "reports" | "settings";
+type ViewId = "dashboard" | "rent_due" | "properties" | "tenants" | "payment_plans" | "new_tenant" | "documents" | "ledger" | "reminders" | "late" | "reports" | "settings";
 type DocumentKind = "invoice" | "statement";
 type DocumentStatus = "draft" | "approved" | "sent";
 type PlanStatus = "active" | "paused" | "completed" | "cancelled";
@@ -481,7 +483,7 @@ export function App() {
   const [documents, setDocuments] = useState<RentDocument[]>(documentSeed);
   const [selectedTenantId, setSelectedTenantId] = useState("tenant-1");
   const [query, setQuery] = useState("");
-  const [propertyFilter, setPropertyFilter] = useState("all");
+  const [propertyFilter] = useState("all");
   const [syncStatus, setSyncStatus] = useState("Using local demo data");
   const [paymentDraft, setPaymentDraft] = useState({
     amount: "450",
@@ -556,11 +558,16 @@ export function App() {
     approved: documents.filter((document) => document.status === "approved").length,
     sent: documents.filter((document) => document.status === "sent").length
   };
+  const upcomingStates = filteredInstallmentStates.filter((state) => state.balance > 0 && state.status === "upcoming" && daysUntil(toInputDate(state.windowStart)) <= 7);
+  const overdueStates = filteredInstallmentStates.filter((state) => state.status === "late" || state.status === "missed");
+  const overdueBalance = overdueStates.reduce((sum, state) => sum + state.balance, 0);
   const dashboardStats = {
     activeTenants: tenants.filter((tenant) => tenant.active).length,
     leaseExpiring: tenants.filter((tenant) => daysUntil(tenant.leaseEndDate) >= 0 && daysUntil(tenant.leaseEndDate) <= 90).length,
     rentOverdue: filteredInstallmentStates.filter((state) => state.status === "late" || state.status === "missed" || state.status === "partial").length,
-    pendingDocuments: documentStats.drafts + documentStats.approved
+    pendingDocuments: documentStats.drafts + documentStats.approved,
+    upcomingBalance: upcomingStates.reduce((sum, state) => sum + state.balance, 0),
+    overdueBalance
   };
 
   function recordPayment() {
@@ -772,25 +779,32 @@ export function App() {
           <div className="brand-mark"><WalletCards size={26} /></div>
           <div>
             <strong>RentFlex Ledger</strong>
-            <span>Reminder, invoice, ledger</span>
+            <span>Smart rent. Simple flow.</span>
           </div>
         </div>
 
         <nav aria-label="Primary">
-          {navItems.map((item) => (
-            <button className={view === item.id ? "nav-item active" : "nav-item"} key={item.id} onClick={() => setView(item.id)} type="button">
-              <item.icon size={19} />
-              <span>{item.label}</span>
-              {item.id === "documents" && documentStats.drafts > 0 ? <b>{documentStats.drafts}</b> : null}
-              {item.id === "late" ? <b>{installmentStates.filter((state) => state.status === "late" || state.status === "missed").length}</b> : null}
-            </button>
+          {navSections.map((section) => (
+            <div className="nav-section" key={section.title}>
+              <div className="nav-section-title"><span>{section.title}</span></div>
+              {section.items.map((item) => (
+                <button className={view === item.id ? "nav-item active" : "nav-item"} key={item.id} onClick={() => setView(item.id)} type="button">
+                  <item.icon size={19} />
+                  <span>{item.label}</span>
+                  {item.id === "documents" && documentStats.drafts > 0 ? <b>{documentStats.drafts}</b> : null}
+                  {item.id === "late" ? <b>{overdueStates.length}</b> : null}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
 
-        <div className="sidebar-summary">
-          <span>{monthLabel}</span>
-          <strong>{money(monthTotals.balance)}</strong>
-          <small>Open balance across active tenants</small>
+        <div className="quick-actions">
+          <strong>Quick Actions</strong>
+          <button onClick={() => setView("new_tenant")} type="button"><Plus size={17} /> New Tenant</button>
+          <button onClick={() => setView("tenants")} type="button"><DollarSign size={17} /> Record Payment</button>
+          <button onClick={() => setView("reminders")} type="button"><BellRing size={17} /> Send Reminder</button>
+          <button onClick={() => setView("documents")} type="button"><FileText size={17} /> Create Statement</button>
         </div>
         <div className="sync-pill">{syncStatus}</div>
       </aside>
@@ -801,28 +815,33 @@ export function App() {
             <Search size={18} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search tenants, properties, phone, Cash App, Chime..." />
           </label>
-          <select value={propertyFilter} onChange={(event) => setPropertyFilter(event.target.value)} aria-label="Filter by property">
-            <option value="all">All Properties</option>
-            {properties.map((property) => (
-              <option key={property.id} value={property.id}>{property.address}</option>
-            ))}
-          </select>
+          <div className="top-actions">
+            <button className="primary-button" onClick={() => setView("new_tenant")} type="button">
+              <Plus size={18} /> New Tenant
+            </button>
+            <button className="notification-button" onClick={() => setView("reminders")} type="button" aria-label="Open reminders">
+              <BellRing size={20} />
+              <b>{reminders.length || documentStats.drafts}</b>
+            </button>
+            <button className="user-menu" type="button" aria-label="Owner menu">
+              <span>JD</span>
+              <strong>John D.<small>Owner</small></strong>
+            </button>
+          </div>
         </div>
 
         <header className="topbar">
           <div>
-            <p className="eyebrow">Summary</p>
-            <h1>Flexible rent plans, reminders, statements, and ledger proof in one workflow.</h1>
+            <h1>Welcome back, John!</h1>
+            <p>Here's what's happening with your properties today.</p>
           </div>
-          <button className="primary-button" onClick={generateDocuments} type="button">
-            <FileText size={18} /> Create Drafts
-          </button>
         </header>
 
         <section className="metric-grid" aria-label="Monthly summary">
           <MetricCard icon={DollarSign} label="Open Balance" value={money(monthTotals.balance)} tone="blue" />
-          <MetricCard icon={CalendarClock} label="Lease Expiring" value={String(dashboardStats.leaseExpiring)} tone="yellow" />
-          <MetricCard icon={AlertTriangle} label="Rent Overdue" value={String(dashboardStats.rentOverdue)} tone="red" />
+          <MetricCard icon={CalendarClock} label="Rent Collected" value={money(monthTotals.paid)} tone="green" />
+          <MetricCard icon={Clock} label="Upcoming Payments" value={money(dashboardStats.upcomingBalance)} tone="yellow" />
+          <MetricCard icon={AlertTriangle} label="Past Due" value={money(dashboardStats.overdueBalance)} tone="red" />
           <MetricCard icon={FileText} label="Pending Statements" value={String(dashboardStats.pendingDocuments)} tone="green" />
         </section>
 
@@ -834,6 +853,8 @@ export function App() {
             queueReminder={queueReminder}
           />
         ) : null}
+
+        {view === "rent_due" ? <RentDueView installmentStates={filteredInstallmentStates} /> : null}
 
         {view === "properties" ? <PropertiesView properties={properties} tenants={tenants} installmentStates={filteredInstallmentStates} /> : null}
 
@@ -857,6 +878,8 @@ export function App() {
             updatePlanType={updatePlanType}
           />
         ) : null}
+
+        {view === "payment_plans" ? <PaymentPlansView tenants={visibleTenants} properties={properties} /> : null}
 
         {view === "new_tenant" ? (
           <NewTenantView
@@ -942,6 +965,79 @@ function DashboardView(props: {
         </button>
       </section>
     </div>
+  );
+}
+
+function RentDueView(props: { installmentStates: InstallmentState[] }) {
+  const openStates = props.installmentStates.filter((item) => item.balance > 0);
+
+  return (
+    <section className="panel">
+      <PanelHead eyebrow="Collections" title="Rent due and upcoming installments" icon={DollarSign} />
+      <div className="workflow-table">
+        <div className="workflow-table-head rent-due-row">
+          <span>Tenant</span>
+          <span>Property</span>
+          <span>Due Date</span>
+          <span>Amount Due</span>
+          <span>Status</span>
+        </div>
+        {openStates.map((item) => (
+          <article className="rent-due-row" key={`${item.tenant.id}-${item.label}`}>
+            <div>
+              <strong>{item.tenant.firstName} {item.tenant.lastInitial}</strong>
+              <small>{planLabel(item.tenant.plan.planType)}</small>
+            </div>
+            <div>
+              <strong>{item.property.address}</strong>
+              <small>{item.property.unitNumber ? `Unit ${item.property.unitNumber}` : `${item.property.city}, ${item.property.state}`}</small>
+            </div>
+            <div>
+              <strong>{shortDate(item.windowStart)}</strong>
+              <small>{formatWindow(item.windowStart, item.windowEnd)}</small>
+            </div>
+            <b>{money(item.balance)}</b>
+            <StatusPill status={item.status} />
+          </article>
+        ))}
+        {openStates.length === 0 ? <div className="empty-state">No open rent balances in the current filter.</div> : null}
+      </div>
+    </section>
+  );
+}
+
+function PaymentPlansView(props: { tenants: Tenant[]; properties: Property[] }) {
+  return (
+    <section className="panel">
+      <PanelHead eyebrow="Tenants" title="Recurring payment plans" icon={CalendarClock} />
+      <div className="workflow-table">
+        <div className="workflow-table-head payment-plan-row">
+          <span>Tenant</span>
+          <span>Plan Name</span>
+          <span>Payment Dates</span>
+          <span>Amounts</span>
+          <span>Status</span>
+        </div>
+        {props.tenants.map((tenant) => {
+          const property = props.properties.find((item) => item.id === tenant.propertyId);
+          return (
+            <article className="payment-plan-row" key={tenant.id}>
+              <div>
+                <strong>{tenant.firstName} {tenant.lastInitial}</strong>
+                <small>{property?.address ?? "Unassigned property"}</small>
+              </div>
+              <div>
+                <strong>{tenant.plan.planName}</strong>
+                <small>{planLabel(tenant.plan.planType)}</small>
+              </div>
+              <span>{tenant.plan.installments.map((item) => `${ordinalDay(item.windowStartDay)}-${ordinalDay(item.windowEndDay)}`).join(", ")}</span>
+              <span>{tenant.plan.installments.map((item) => money(item.amount)).join(" / ")}</span>
+              <StatusPill status={tenant.plan.status === "active" ? "paid" : "inactive"} />
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -1590,17 +1686,44 @@ function StatusPill({ status }: { status: PaymentStatus | DocumentStatus | "inac
   return <span className={`status-pill ${status}`}>{status.replace("_", " ")}</span>;
 }
 
-const navItems: Array<{ id: ViewId; label: string; icon: typeof Home }> = [
-  { id: "dashboard", label: "Summary", icon: ClipboardList },
-  { id: "properties", label: "Properties", icon: Home },
-  { id: "tenants", label: "Tenants", icon: UserRound },
-  { id: "new_tenant", label: "New Tenant", icon: Plus },
-  { id: "documents", label: "Invoices & Statements", icon: FileText },
-  { id: "ledger", label: "Rent Ledger", icon: ReceiptText },
-  { id: "reminders", label: "Reminders", icon: BellRing },
-  { id: "late", label: "Late Payments", icon: AlertTriangle },
-  { id: "reports", label: "Reports", icon: Download },
-  { id: "settings", label: "Settings", icon: Settings }
+const navSections: Array<{ title: string; items: Array<{ id: ViewId; label: string; icon: typeof Home }> }> = [
+  {
+    title: "Dashboard",
+    items: [{ id: "dashboard", label: "Dashboard", icon: Home }]
+  },
+  {
+    title: "Collections",
+    items: [
+      { id: "rent_due", label: "Rent Due", icon: DollarSign },
+      { id: "reminders", label: "Reminder Center", icon: BellRing },
+      { id: "late", label: "Late Payments", icon: AlertTriangle }
+    ]
+  },
+  {
+    title: "Tenants",
+    items: [
+      { id: "tenants", label: "Tenants", icon: UsersRound },
+      { id: "payment_plans", label: "Payment Plans", icon: CalendarClock }
+    ]
+  },
+  {
+    title: "Properties",
+    items: [{ id: "properties", label: "Properties", icon: Home }]
+  },
+  {
+    title: "Accounting",
+    items: [
+      { id: "ledger", label: "Rent Ledger", icon: ReceiptText },
+      { id: "documents", label: "Statements", icon: FileText }
+    ]
+  },
+  {
+    title: "Management",
+    items: [
+      { id: "reports", label: "Reports", icon: Download },
+      { id: "settings", label: "Settings", icon: Settings }
+    ]
+  }
 ];
 
 const paymentMethods: PaymentMethod[] = ["cash_app", "chime", "zelle", "venmo", "paypal", "ach", "cash", "money_order", "other"];
@@ -1876,6 +1999,11 @@ function planLabel(planType: PlanType) {
   if (planType === "twice_monthly") return "Semi-Monthly";
   if (planType === "bi_weekly") return "Bi-Weekly";
   return planType.replace("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function ordinalDay(day: number) {
+  const suffix = day % 10 === 1 && day !== 11 ? "st" : day % 10 === 2 && day !== 12 ? "nd" : day % 10 === 3 && day !== 13 ? "rd" : "th";
+  return `${day}${suffix}`;
 }
 
 function addDays(date: Date, days: number) {
