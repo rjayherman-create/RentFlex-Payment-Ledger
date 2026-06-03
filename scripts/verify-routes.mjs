@@ -75,7 +75,8 @@ const expectedClickableLabels = [
   "Record Payment",
   "Send Reminder",
   "Create Statement",
-  "Open Ledger"
+  "View all upcoming payments",
+  "View all late payments"
 ];
 
 for (const label of expectedClickableLabels) {

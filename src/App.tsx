@@ -22,7 +22,7 @@ import {
   UserRound,
   WalletCards
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useState } from "react";
 
 type PlanType = "monthly" | "twice_monthly" | "weekly" | "bi_weekly" | "custom";
 type PaymentMethod = "cash_app" | "chime" | "zelle" | "venmo" | "paypal" | "ach" | "cash" | "money_order" | "other";
@@ -832,17 +832,17 @@ export function App() {
 
         <header className="topbar">
           <div>
-            <h1>Welcome back, John!</h1>
+            <h1>Good morning, John! 👋</h1>
             <p>Here's what's happening with your properties today.</p>
           </div>
         </header>
 
         <section className="metric-grid" aria-label="Monthly summary">
-          <MetricCard icon={DollarSign} label="Open Balance" value={money(monthTotals.balance)} tone="blue" />
-          <MetricCard icon={CalendarClock} label="Rent Collected" value={money(monthTotals.paid)} tone="green" />
+          <MetricCard icon={DollarSign} label="Open Balance" value={money(monthTotals.balance)} tone="purple" />
+          <MetricCard icon={CalendarClock} label="Rent Collected" value={money(monthTotals.paid)} tone="blue" />
           <MetricCard icon={Clock} label="Upcoming Payments" value={money(dashboardStats.upcomingBalance)} tone="yellow" />
           <MetricCard icon={AlertTriangle} label="Past Due" value={money(dashboardStats.overdueBalance)} tone="red" />
-          <MetricCard icon={FileText} label="Pending Statements" value={String(dashboardStats.pendingDocuments)} tone="green" />
+          <MetricCard icon={FileText} label="Pending Statements" value={String(dashboardStats.pendingDocuments)} tone="pink" />
         </section>
 
         {view === "dashboard" ? (
@@ -917,53 +917,156 @@ function DashboardView(props: {
   queueReminder: (tenant: Tenant, state?: InstallmentState) => void;
 }) {
   const tenantSummaries = summarizeByTenant(props.filteredInstallmentStates);
-  const dueNow = props.filteredInstallmentStates.filter((item) => item.status === "window_open" || item.status === "partial" || item.status === "late");
+  const dueNow = props.filteredInstallmentStates.filter((item) => item.status === "upcoming" || item.status === "window_open" || item.status === "partial" || item.status === "late").slice(0, 3);
+  const overdue = props.filteredInstallmentStates.filter((item) => item.status === "late" || item.status === "missed" || item.status === "partial").slice(0, 3);
+  const collected = props.filteredInstallmentStates.reduce((sum, item) => sum + item.paidAmount, 0);
+  const goal = props.filteredInstallmentStates.reduce((sum, item) => sum + item.expectedAmount, 0);
+  const percent = goal > 0 ? Math.min(100, Math.round((collected / goal) * 100)) : 0;
+  const progressStyle = { "--progress": `${percent * 3.6}deg` } as CSSProperties;
 
   return (
-    <div className="content-grid dashboard-grid">
-      <section className="panel">
-        <PanelHead eyebrow="June rent dashboard" title="Who is current right now" icon={ClipboardList} />
-        <div className="tenant-stack">
-          {tenantSummaries.map((item) => (
-            <article className="tenant-row" key={item.tenant.id}>
-              <div className={`status-dot ${item.status}`} />
+    <div className="premium-dashboard-grid">
+      <section className="panel premium-panel span-2">
+        <div className="premium-panel-head">
+          <h2>Upcoming Payments</h2>
+          <button className="text-link" onClick={props.onViewLedger} type="button">View all</button>
+        </div>
+        <div className="premium-table upcoming-table">
+          <div className="premium-table-head">
+            <span>Tenant</span>
+            <span>Property</span>
+            <span>Due Date</span>
+            <span>Amount</span>
+            <span>Status</span>
+          </div>
+          {dueNow.map((item) => (
+            <article key={`${item.tenant.id}-${item.label}`}>
+              <div className="identity-cell">
+                <span className="avatar-chip">{item.tenant.firstName[0]}{item.tenant.lastInitial}</span>
+                <div>
+                  <strong>{item.tenant.firstName} {item.tenant.lastInitial}</strong>
+                  <small>{planLabel(item.tenant.plan.planType)} Plan</small>
+                </div>
+              </div>
               <div>
                 <strong>{item.property.address}</strong>
-                <span>{item.tenant.firstName} {item.tenant.lastInitial} - {planLabel(item.tenant.plan.planType)}</span>
+                <small>{item.property.unitNumber ? `Unit ${item.property.unitNumber}` : item.property.city}</small>
               </div>
-              <div className="money-stack">
-                <strong>{money(item.paid)}</strong>
-                <span>{money(item.balance)} open</span>
+              <div>
+                <strong>{shortDate(item.windowStart)}</strong>
+                <small>{daysUntil(toInputDate(item.windowStart)) <= 0 ? "Due now" : `in ${daysUntil(toInputDate(item.windowStart))} days`}</small>
               </div>
+              <b>{money(item.balance || item.expectedAmount)}</b>
               <StatusPill status={item.status} />
-              <button className="icon-button" onClick={() => props.onSelectTenant(item.tenant.id)} title="Open tenant" type="button">
-                <UserRound size={18} />
-              </button>
             </article>
           ))}
+        </div>
+        <button className="text-link centered-link" onClick={props.onViewLedger} type="button">
+          View all upcoming payments <Send size={16} />
+        </button>
+      </section>
+
+      <section className="panel premium-panel span-2">
+        <div className="premium-panel-head">
+          <h2>Overdue Tenants</h2>
+          <button className="text-link" onClick={props.onViewLedger} type="button">View all</button>
+        </div>
+        <div className="premium-table overdue-table">
+          <div className="premium-table-head">
+            <span>Tenant</span>
+            <span>Property</span>
+            <span>Days Late</span>
+            <span>Balance</span>
+          </div>
+          {overdue.map((item) => (
+            <article key={`${item.tenant.id}-${item.label}`}>
+              <div className="identity-cell">
+                <span className="avatar-chip warm">{item.tenant.firstName[0]}{item.tenant.lastInitial}</span>
+                <div>
+                  <strong>{item.tenant.firstName} {item.tenant.lastInitial}</strong>
+                  <small>{planLabel(item.tenant.plan.planType)} Plan</small>
+                </div>
+              </div>
+              <div>
+                <strong>{item.property.address}</strong>
+                <small>{item.property.unitNumber ? `Unit ${item.property.unitNumber}` : item.property.city}</small>
+              </div>
+              <b className="danger-text">{Math.max(1, Math.abs(daysUntil(toInputDate(item.graceEnd))))} days</b>
+              <b className="danger-text">{money(item.balance)}</b>
+            </article>
+          ))}
+        </div>
+        <button className="text-link centered-link" onClick={props.onViewLedger} type="button">
+          View all late payments <Send size={16} />
+        </button>
+      </section>
+
+      <aside className="panel premium-panel collection-widget">
+        <div className="premium-panel-head">
+          <h2>Rent Collected This Month</h2>
+          <NotebookPen size={19} />
+        </div>
+        <div className="progress-ring" style={progressStyle}>
+          <div>
+            <strong>{money(collected)}</strong>
+            <span>of {money(goal)} goal</span>
+          </div>
+        </div>
+        <div className="progress-lines">
+          <span><i /> Collected <b>{money(collected)} ({percent}%)</b></span>
+          <span><i className="remaining" /> Remaining <b>{money(Math.max(goal - collected, 0))} ({100 - percent}%)</b></span>
+        </div>
+        <div className="goal-bar"><span style={{ width: `${percent}%` }} /></div>
+      </aside>
+
+      <section className="panel premium-panel activity-panel span-4">
+        <div className="premium-panel-head">
+          <h2>Recent Activity</h2>
+          <button className="text-link" onClick={props.onViewLedger} type="button">View all</button>
+        </div>
+        <div className="activity-list">
+          <article>
+            <span className="activity-icon success"><DollarSign size={18} /></span>
+            <div><strong>Payment received from John D.</strong><small>123 Main Street - Cash App</small></div>
+            <b className="success-text">+{money(450)}</b>
+            <time>May 31, 2026</time>
+            <span>2:15 PM</span>
+          </article>
+          <article>
+            <span className="activity-icon purple"><FileText size={18} /></span>
+            <div><strong>Statement sent to Maria S.</strong><small>45 Oak Street - May 2026</small></div>
+            <StatusPill status="sent" />
+            <time>May 31, 2026</time>
+            <span>10:30 AM</span>
+          </article>
+          <article>
+            <span className="activity-icon blue"><Send size={18} /></span>
+            <div><strong>Reminder sent to Robert K.</strong><small>88 Pine Street - Payment due Jun 3</small></div>
+            <StatusPill status="sent" />
+            <time>May 30, 2026</time>
+            <span>4:45 PM</span>
+          </article>
+          <article>
+            <span className="activity-icon danger"><AlertTriangle size={18} /></span>
+            <div><strong>Late payment detected for Maria S.</strong><small>45 Oak Street - 5 days late</small></div>
+            <span className="late-badge">5 days late</span>
+            <time>May 30, 2026</time>
+            <span>9:10 AM</span>
+          </article>
         </div>
       </section>
 
-      <section className="panel">
-        <PanelHead eyebrow="Reminder center" title="Needs attention" icon={BellRing} />
-        <div className="attention-list">
-          {dueNow.map((item) => (
-            <article key={`${item.tenant.id}-${item.label}`}>
-              <div>
-                <strong>{item.tenant.firstName} {item.tenant.lastInitial}</strong>
-                <span>{item.label} - {formatWindow(item.windowStart, item.windowEnd)}</span>
-              </div>
-              <b>{money(item.balance)}</b>
-              <button className="secondary-button compact" onClick={() => props.queueReminder(item.tenant, item)} type="button">
-                <MessageSquareText size={16} /> Draft
-              </button>
-            </article>
-          ))}
+      <aside className="promo-card">
+        <button className="promo-close" type="button">×</button>
+        <h2>Stay on top of payments</h2>
+        <p>Automated reminders help you collect on time, every time.</p>
+        <div className="phone-illustration" aria-hidden="true">
+          <div><BellRing size={34} /></div>
         </div>
-        <button className="primary-button wide-button" onClick={props.onViewLedger} type="button">
-          <ReceiptText size={18} /> Open Ledger
+        <button className="primary-button" onClick={() => dueNow[0] ? props.queueReminder(dueNow[0].tenant, dueNow[0]) : undefined} type="button">
+          Create Reminder
         </button>
-      </section>
+      </aside>
     </div>
   );
 }
