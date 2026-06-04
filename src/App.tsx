@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { AuthControls } from "@/components/AuthControls";
+import brandLogo from "@/assets/logo-with-text.png";
 
 type PlanType = "monthly" | "twice_monthly" | "weekly" | "bi_weekly" | "custom";
 type Weekday = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
@@ -937,8 +938,9 @@ export default function App() {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand">
-          <img className="brand-image" src="/branding/Logo With Text.png" alt="RentFlex Ledger" />
+        <div className="logo-section">
+          <img className="logo-image" src={brandLogo} alt="RentFlex Ledger" />
+          <p className="logo-tagline">Flexible Rent Collection. Simple Tenant Payments.</p>
         </div>
 
         <nav aria-label="Primary">

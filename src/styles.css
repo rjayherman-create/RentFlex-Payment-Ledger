@@ -73,25 +73,40 @@ button:disabled {
   box-shadow: 20px 0 60px rgba(8, 20, 45, 0.16);
 }
 
-.brand {
-  min-height: 0;
-  display: grid;
-  align-items: start;
-  margin-bottom: 0;
-  margin-top: -30px;
+.logo-section {
+  display: flex;
+  width: 220px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  padding: 24px 16px 28px;
   line-height: 0;
-  overflow: hidden;
 }
 
-.brand-image {
+.logo-image {
   display: block;
-  width: min(100%, 280px);
-  height: auto;
-  margin-bottom: -58px;
+  width: 180px;
+  max-width: 180px;
+  height: 100px;
+  max-height: 100px;
+  margin: 0;
+  object-fit: cover;
+  object-position: center 50%;
+}
+
+.logo-tagline {
+  max-width: 180px;
+  margin: 10px 0 0;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: center;
 }
 
 .sidebar > nav {
-  margin-top: -4px;
+  margin-top: 0;
 }
 
 .brand-mark {
@@ -190,7 +205,7 @@ nav {
 .quick-actions {
   display: grid;
   gap: 8px;
-  margin-top: auto;
+  margin-top: 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 18px;
   background: linear-gradient(135deg, rgba(123, 97, 255, 0.28), rgba(255, 255, 255, 0.08));
