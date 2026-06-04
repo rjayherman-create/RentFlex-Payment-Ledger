@@ -50,6 +50,49 @@ type AccountType =
 type ReminderOffset = "three_days_before" | "one_day_before" | "payment_day" | "two_days_late" | "seven_days_late";
 type DeliveryMethod = "sms" | "email" | "push" | "in_app";
 
+const PUBLIC_VIEWS: ViewId[] = ["dashboard", "privacy", "terms", "security", "settings"];
+
+const viewRouteMap: Record<ViewId, string> = {
+  dashboard: "/dashboard",
+  rent_due: "/collections/due-upcoming",
+  properties: "/properties",
+  tenants: "/tenants",
+  payment_plans: "/tenants/schedules",
+  plan_acceptance: "/tenants/plan-acceptance",
+  new_tenant: "/tenants/new",
+  documents: "/accounting/documents",
+  ledger: "/accounting/rent-ledger",
+  reminders: "/collections/messages",
+  late: "/collections/late",
+  reports: "/management/reports",
+  settings: "/management/settings",
+  mobile_app: "/management/mobile-setup",
+  security: "/management/security-center",
+  privacy: "/legal/privacy",
+  terms: "/legal/terms"
+};
+
+const routeViewMap = new Map<string, ViewId>(
+  (Object.entries(viewRouteMap) as Array<[ViewId, string]>).map(([id, path]) => [path, id])
+);
+
+function normalizeRoutePath(path: string) {
+  const trimmed = path.trim().toLowerCase();
+  if (!trimmed || trimmed === "/") return "/dashboard";
+  const leadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return leadingSlash.replace(/\/+$/, "") || "/dashboard";
+}
+
+function viewFromHash(hashValue: string): ViewId | null {
+  if (!hashValue) return null;
+  const normalized = normalizeRoutePath(hashValue.replace(/^#/, ""));
+  return routeViewMap.get(normalized) ?? null;
+}
+
+function hashForView(view: ViewId) {
+  return `#${viewRouteMap[view]}`;
+}
+
 interface Property {
   id: string;
   address: string;
@@ -624,7 +667,10 @@ export default function App() {
   const [csvImportReport, setCsvImportReport] = useState<CsvImportReport | null>(null);
   const [csvImportIssues, setCsvImportIssues] = useState<CsvImportIssue[]>([]);
   const loadAbortRef = useRef<AbortController | null>(null);
-  const [view, setView] = useState<ViewId>("dashboard");
+  const [view, setView] = useState<ViewId>(() => {
+    if (typeof window === "undefined") return "dashboard";
+    return viewFromHash(window.location.hash) ?? "dashboard";
+  });
   const [properties, setProperties] = useState<Property[]>(propertiesSeed);
   const [tenants, setTenants] = useState<Tenant[]>(tenantsSeed);
   const [payments, setPayments] = useState<Payment[]>(paymentsSeed);
@@ -735,6 +781,43 @@ export default function App() {
     if (!authRequired) return;
     if (!isAuthenticated) setView("dashboard");
   }, [authRequired, isAuthenticated]);
+
+  useEffect(() => {
+    const routeView = viewFromHash(window.location.hash);
+    if (routeView && routeView !== view) {
+      if (authRequired && !isAuthenticated && !PUBLIC_VIEWS.includes(routeView)) {
+        window.history.replaceState(null, "", hashForView("dashboard"));
+        return;
+      }
+      setView(routeView);
+      return;
+    }
+
+    if (!routeView) {
+      window.history.replaceState(null, "", hashForView(view));
+    }
+
+    function onHashChange() {
+      const nextView = viewFromHash(window.location.hash) ?? "dashboard";
+      if (authRequired && !isAuthenticated && !PUBLIC_VIEWS.includes(nextView)) {
+        showToast("Sign in first to access this section.", "error");
+        setView("dashboard");
+        window.history.replaceState(null, "", hashForView("dashboard"));
+        return;
+      }
+      setView(nextView);
+    }
+
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [authRequired, isAuthenticated, view]);
+
+  useEffect(() => {
+    const nextHash = hashForView(view);
+    if (window.location.hash !== nextHash) {
+      window.location.hash = nextHash;
+    }
+  }, [view]);
 
   useEffect(() => {
     if (!sessionToken) return;
@@ -1615,8 +1698,7 @@ export default function App() {
               <div className="nav-section-title"><span>{section.title}</span></div>
               {section.items.map((item) => (
                 <button className={view === item.id ? "nav-item active" : "nav-item"} key={item.id} onClick={() => {
-                  const publicViews: ViewId[] = ["dashboard", "privacy", "terms", "security", "settings"];
-                  if (authRequired && !isAuthenticated && !publicViews.includes(item.id)) {
+                  if (authRequired && !isAuthenticated && !PUBLIC_VIEWS.includes(item.id)) {
                     showToast("Sign in first to access this section.", "error");
                     return;
                   }
