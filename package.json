@@ -12,7 +12,8 @@
     "lint": "tsc --noEmit -p tsconfig.json",
     "start": "node server/index.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "verify:routes": "node scripts/verify-routes.mjs"
+    "verify:routes": "node scripts/verify-routes.mjs",
+    "optimize:branding": "node scripts/optimize-branding.mjs"
   },
   "dependencies": {
     "@clerk/react": "^6.7.3",

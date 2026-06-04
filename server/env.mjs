@@ -47,6 +47,10 @@ export function validateServerEnv() {
     errors.push("BYPASS_AUTH must be false in production.");
   }
 
+  if (isProduction && !process.env.AUTH_SESSION_SECRET) {
+    errors.push("AUTH_SESSION_SECRET is required in production.");
+  }
+
   if (isProduction && requireBillingAuth) {
     if (!process.env.CLERK_SECRET_KEY) {
       errors.push("CLERK_SECRET_KEY is required when REQUIRE_CLERK_STRIPE_ENV=true in production.");
@@ -73,6 +77,7 @@ export function validateServerEnv() {
     isProduction,
     requireBillingAuth,
     publicAppUrl: process.env.PUBLIC_APP_URL || process.env.APP_BASE_URL || "",
-    launchCheckSecret: process.env.LAUNCH_CHECK_SECRET || ""
+    launchCheckSecret: process.env.LAUNCH_CHECK_SECRET || "",
+    sessionAuthSecret: process.env.AUTH_SESSION_SECRET || process.env.LAUNCH_CHECK_SECRET || "rentflex-dev-session-secret"
   };
 }

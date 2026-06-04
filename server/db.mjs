@@ -24,6 +24,8 @@ export async function getState() {
   await initPromise;
   return {
     activityLogs: await getCollection("activity_logs"),
+    auditEvents: await getCollection("audit_events"),
+    communicationReceipts: await getCollection("communication_receipts"),
     properties: await getCollection("properties"),
     tenants: await getCollection("tenants"),
     payments: await getCollection("payments"),
@@ -110,6 +112,8 @@ async function initialize() {
     await seedCollection("documents", documentsSeed);
     await seedCollection("plan_acceptances", []);
     await seedCollection("activity_logs", []);
+    await seedCollection("audit_events", []);
+    await seedCollection("communication_receipts", []);
     await seedCollection("generated_plan_pdfs", []);
   }
 }
