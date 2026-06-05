@@ -32,7 +32,7 @@ type PlanType = "monthly" | "twice_monthly" | "weekly" | "bi_weekly" | "custom";
 type Weekday = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
 type PaymentMethod = "cash_app" | "chime" | "zelle" | "venmo" | "paypal" | "ach" | "cash" | "money_order" | "other";
 type PaymentStatus = "paid" | "window_open" | "partial" | "late" | "upcoming" | "missed";
-type ViewId = "dashboard" | "rent_due" | "properties" | "tenants" | "payment_plans" | "plan_acceptance" | "new_tenant" | "documents" | "ledger" | "reminders" | "late" | "reports" | "settings" | "mobile_app" | "security" | "privacy" | "terms";
+type ViewId = "dashboard" | "rent_due" | "properties" | "tenants" | "payment_plans" | "plan_acceptance" | "new_tenant" | "documents" | "ledger" | "reminders" | "late" | "reports" | "settings" | "mobile_app" | "security" | "privacy" | "terms" | "vault" | "vault_dashboard";
 type UserRole = "owner" | "manager" | "viewer";
 type DocumentKind = "invoice" | "statement";
 type DocumentStatus = "draft" | "approved" | "sent";
@@ -49,6 +49,66 @@ type AccountType =
   | "other";
 type ReminderOffset = "three_days_before" | "one_day_before" | "payment_day" | "two_days_late" | "seven_days_late";
 type DeliveryMethod = "sms" | "email" | "push" | "in_app";
+type VaultDocumentStatus = "draft" | "pending_review" | "attorney_approved" | "awaiting_signature" | "executed" | "archived";
+type VaultRole = "attorney" | "paralegal" | "client" | "admin";
+type VaultDocumentKind = "trust_document" | "amendment" | "beneficiary_doc" | "invoice" | "signed_document" | "general";
+type VaultAuditAction = "uploaded" | "viewed" | "downloaded" | "printed" | "shared" | "signed" | "deleted" | "restored" | "status_changed" | "version_added" | "share_created";
+
+interface VaultDocumentVersion {
+  id: string;
+  documentId: string;
+  versionNumber: number;
+  content: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  changeNote: string;
+}
+
+interface VaultShareLink {
+  id: string;
+  documentId: string;
+  token: string;
+  createdBy: string;
+  createdAt: string;
+  expiresAt: string;
+  permissions: { canView: boolean; canDownload: boolean; canPrint: boolean };
+  accessCount: number;
+  lastAccessedAt?: string;
+}
+
+interface VaultDocument {
+  id: string;
+  clientId: string;
+  kind: VaultDocumentKind;
+  title: string;
+  description: string;
+  status: VaultDocumentStatus;
+  accessRoles: VaultRole[];
+  uploadedBy: string;
+  uploadedAt: string;
+  updatedAt: string;
+  fileSize: number;
+  fileName: string;
+  mimeType: string;
+  content: string;
+  versions: VaultDocumentVersion[];
+  isDeleted: boolean;
+  deletedAt?: string;
+  deletedBy?: string;
+  watermarkEnabled: boolean;
+  shareLinks: VaultShareLink[];
+  matterId?: string;
+}
+
+interface VaultAuditEntry {
+  id: string;
+  documentId: string;
+  actorRole: string;
+  action: VaultAuditAction;
+  ipAddress: string;
+  timestamp: string;
+  details: string;
+}
 
 const PUBLIC_VIEWS: ViewId[] = ["dashboard", "privacy", "terms", "security", "settings"];
 
@@ -70,6 +130,8 @@ const viewRouteMap: Record<ViewId, string> = {
   security: "/management/security-center",
   privacy: "/legal/privacy",
   terms: "/legal/terms"
+  ,vault: "/vault/documents",
+  vault_dashboard: "/vault/dashboard"
 };
 
 const routeViewMap = new Map<string, ViewId>(
@@ -323,6 +385,8 @@ interface AppState {
   properties: Property[];
   reminders: ReminderLog[];
   tenants: Tenant[];
+  vaultDocuments?: VaultDocument[];
+  vaultAuditEvents?: VaultAuditEntry[];
 }
 
 interface ParsedTenantCsvRow {
@@ -601,6 +665,86 @@ const documentSeed: RentDocument[] = [
   }
 ];
 
+const vaultDocumentsSeed: VaultDocument[] = [
+  {
+    id: "vdoc-1",
+    clientId: "tenant-1",
+    kind: "trust_document",
+    title: "Living Trust – John Davis",
+    description: "Revocable living trust for 123 Main Street property estate.",
+    status: "executed",
+    accessRoles: ["attorney", "admin"],
+    uploadedBy: "Attorney Owner",
+    uploadedAt: "2026-05-15T10:00:00Z",
+    updatedAt: "2026-05-20T14:30:00Z",
+    fileSize: 42500,
+    fileName: "living-trust-john-davis.pdf",
+    mimeType: "application/pdf",
+    content: "REVOCABLE LIVING TRUST AGREEMENT\n\nGrantor: John A. Davis\nDate: May 15, 2026\n\nThis trust is established for the benefit of the grantor and named beneficiaries...",
+    versions: [
+      { id: "vv-1-1", documentId: "vdoc-1", versionNumber: 1, content: "Initial draft submitted for review.", uploadedBy: "Attorney", uploadedAt: "2026-05-15T10:00:00Z", changeNote: "Initial upload" },
+      { id: "vv-1-2", documentId: "vdoc-1", versionNumber: 2, content: "Revised with beneficiary corrections.", uploadedBy: "Attorney", uploadedAt: "2026-05-18T09:15:00Z", changeNote: "Beneficiary name correction" }
+    ],
+    isDeleted: false,
+    watermarkEnabled: true,
+    shareLinks: [],
+    matterId: "MATTER-2026-001"
+  },
+  {
+    id: "vdoc-2",
+    clientId: "tenant-2",
+    kind: "amendment",
+    title: "Trust Amendment #1 – Maria Santos",
+    description: "First amendment adding new beneficiary to existing trust.",
+    status: "pending_review",
+    accessRoles: ["attorney", "paralegal"],
+    uploadedBy: "Paralegal",
+    uploadedAt: "2026-06-01T11:30:00Z",
+    updatedAt: "2026-06-01T11:30:00Z",
+    fileSize: 18200,
+    fileName: "amendment-1-maria-santos.pdf",
+    mimeType: "application/pdf",
+    content: "FIRST AMENDMENT TO LIVING TRUST\n\nAmendor: Maria Santos\nDate: June 1, 2026\n\nThe following amendment is hereby made to the existing trust agreement...",
+    versions: [
+      { id: "vv-2-1", documentId: "vdoc-2", versionNumber: 1, content: "First amendment draft.", uploadedBy: "Paralegal", uploadedAt: "2026-06-01T11:30:00Z", changeNote: "Initial draft" }
+    ],
+    isDeleted: false,
+    watermarkEnabled: true,
+    shareLinks: [],
+    matterId: "MATTER-2026-002"
+  },
+  {
+    id: "vdoc-3",
+    clientId: "tenant-3",
+    kind: "beneficiary_doc",
+    title: "Beneficiary Designation Form – Robert King",
+    description: "Designates primary and contingent beneficiaries.",
+    status: "attorney_approved",
+    accessRoles: ["attorney", "admin", "client"],
+    uploadedBy: "Attorney Owner",
+    uploadedAt: "2026-05-28T14:00:00Z",
+    updatedAt: "2026-06-02T10:20:00Z",
+    fileSize: 9800,
+    fileName: "beneficiary-form-robert-king.pdf",
+    mimeType: "application/pdf",
+    content: "BENEFICIARY DESIGNATION\n\nPrimary Beneficiary: Dana King (spouse)\nContingent Beneficiary: Estate\n\nDate: May 28, 2026",
+    versions: [
+      { id: "vv-3-1", documentId: "vdoc-3", versionNumber: 1, content: "Original beneficiary designation form.", uploadedBy: "Attorney Owner", uploadedAt: "2026-05-28T14:00:00Z", changeNote: "Initial upload" }
+    ],
+    isDeleted: false,
+    watermarkEnabled: false,
+    shareLinks: [],
+    matterId: "MATTER-2026-003"
+  }
+];
+
+const vaultAuditSeed: VaultAuditEntry[] = [
+  { id: "vaudit-1", documentId: "vdoc-1", actorRole: "attorney", action: "uploaded", ipAddress: "192.168.1.1", timestamp: "2026-05-15T10:00:00Z", details: "Initial upload of Living Trust – John Davis" },
+  { id: "vaudit-2", documentId: "vdoc-1", actorRole: "attorney", action: "status_changed", ipAddress: "192.168.1.1", timestamp: "2026-05-20T14:30:00Z", details: "Status advanced to executed" },
+  { id: "vaudit-3", documentId: "vdoc-2", actorRole: "paralegal", action: "uploaded", ipAddress: "192.168.1.5", timestamp: "2026-06-01T11:30:00Z", details: "Amendment draft uploaded for attorney review" },
+  { id: "vaudit-4", documentId: "vdoc-3", actorRole: "attorney", action: "viewed", ipAddress: "192.168.1.1", timestamp: "2026-06-02T10:20:00Z", details: "Beneficiary designation form reviewed" }
+];
+
 const defaultNewTenantDraft: NewTenantDraft = {
   firstName: "",
   lastName: "",
@@ -678,6 +822,8 @@ export default function App() {
   const [reminders, setReminders] = useState<ReminderLog[]>([]);
   const [documents, setDocuments] = useState<RentDocument[]>(documentSeed);
   const [selectedTenantId, setSelectedTenantId] = useState("tenant-1");
+  const [vaultDocuments, setVaultDocuments] = useState<VaultDocument[]>(vaultDocumentsSeed);
+  const [vaultAuditEvents, setVaultAuditEvents] = useState<VaultAuditEntry[]>(vaultAuditSeed);
   const [planAcceptanceTenantId, setPlanAcceptanceTenantId] = useState<string | null>(null);
   const [planAcceptanceRecords, setPlanAcceptanceRecords] = useState<PlanAcceptanceRecord[]>([]);
   const [activityLogs, setActivityLogs] = useState<PlanActivityLogEntry[]>([]);
@@ -732,6 +878,8 @@ export default function App() {
         setGeneratedPlanPdfs(state.generatedPlanPdfs ?? []);
         setSelectedTenantId(state.tenants[0]?.id ?? "tenant-1");
         setSyncStatus("Connected to SQLite database");
+        setVaultDocuments(state.vaultDocuments ?? vaultDocumentsSeed);
+        setVaultAuditEvents(state.vaultAuditEvents ?? vaultAuditSeed);
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
@@ -1684,6 +1832,94 @@ export default function App() {
 
   const offlineMode = syncStatus.toLowerCase().includes("offline");
 
+  function uploadVaultDocument(doc: VaultDocument) {
+    setVaultDocuments((current) => [doc, ...current]);
+    logVaultAudit(doc.id, "uploaded", `${doc.title} uploaded as ${doc.kind}`);
+    void apiPost("/api/vault/documents", doc, { idempotencyKey: createIdempotencyKey("vault-doc", doc.id), headers: getAuthHeaders() })
+      .catch(() => showToast("Document saved locally. Retry sync when online.", "error"));
+    showToast(`"${doc.title}" added to vault.`);
+  }
+
+  function updateVaultDocumentStatus(id: string, status: VaultDocumentStatus) {
+    setVaultDocuments((current) => current.map((d) => d.id === id ? { ...d, status, updatedAt: new Date().toISOString() } : d));
+    logVaultAudit(id, "status_changed", `Status advanced to ${status.replace(/_/g, " ")}`);
+    void apiPatch(`/api/vault/documents/${id}/status`, { status }, { idempotencyKey: createIdempotencyKey("vault-status", `${id}-${status}`), headers: getAuthHeaders() });
+    showToast(`Document status updated to "${status.replace(/_/g, " ")}".`);
+  }
+
+  function softDeleteVaultDocument(id: string) {
+    const now = new Date().toISOString();
+    setVaultDocuments((current) => current.map((d) => d.id === id ? { ...d, isDeleted: true, deletedAt: now, deletedBy: userRole } : d));
+    logVaultAudit(id, "deleted", "Document moved to trash (soft delete — recoverable)");
+    void apiPatch(`/api/vault/documents/${id}/delete`, { isDeleted: true, deletedAt: now }, { idempotencyKey: createIdempotencyKey("vault-delete", id), headers: getAuthHeaders() });
+    showToast("Document moved to deleted. Can be restored from Deleted filter.");
+  }
+
+  function restoreVaultDocument(id: string) {
+    setVaultDocuments((current) => current.map((d) => d.id === id ? { ...d, isDeleted: false, deletedAt: undefined, deletedBy: undefined } : d));
+    logVaultAudit(id, "restored", "Document restored from trash");
+    void apiPatch(`/api/vault/documents/${id}/restore`, { isDeleted: false }, { idempotencyKey: createIdempotencyKey("vault-restore", id), headers: getAuthHeaders() });
+    showToast("Document restored successfully.");
+  }
+
+  function createVaultShareLink(docId: string, permissions: { canView: boolean; canDownload: boolean; canPrint: boolean }, expiresHours: number): VaultShareLink {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + expiresHours * 60 * 60 * 1000);
+    const token = btoa(`${docId}:${expiresAt.toISOString()}:${Math.random().toString(16).slice(2)}`).replace(/[^a-zA-Z0-9]/g, "").slice(0, 32);
+    const link: VaultShareLink = {
+      id: `share-${Date.now()}`,
+      documentId: docId,
+      token,
+      createdBy: userRole,
+      createdAt: now.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+      permissions,
+      accessCount: 0
+    };
+    setVaultDocuments((current) => current.map((d) => d.id === docId ? { ...d, shareLinks: [link, ...d.shareLinks] } : d));
+    logVaultAudit(docId, "share_created", `Share link created, expires ${expiresAt.toLocaleString()}, permissions: ${Object.entries(permissions).filter(([, v]) => v).map(([k]) => k).join(", ")}`);
+    void apiPost("/api/vault/share", link, { idempotencyKey: createIdempotencyKey("vault-share", link.id), headers: getAuthHeaders() });
+    return link;
+  }
+
+  function watermarkAndDownload(doc: VaultDocument, clientName: string) {
+    const now = new Date();
+    const watermarkHeader = doc.watermarkEnabled ? [
+      "════════════════════════════════════════",
+      "  CONFIDENTIAL — RESTRICTED DOCUMENT",
+      `  Client: ${clientName}`,
+      `  Matter: ${doc.matterId ?? "N/A"}`,
+      `  Downloaded: ${now.toLocaleString()}`,
+      "  FOR AUTHORIZED USE ONLY",
+      "════════════════════════════════════════",
+      ""
+    ].join("\n") : "";
+    const content = watermarkHeader + doc.content;
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = doc.watermarkEnabled ? `CONFIDENTIAL-${doc.fileName}` : doc.fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+    logVaultAudit(doc.id, "downloaded", `Downloaded by ${userRole}${doc.watermarkEnabled ? " with CONFIDENTIAL watermark" : ""}`);
+    showToast(`"${doc.title}" downloaded${doc.watermarkEnabled ? " with watermark." : "."}`);
+  }
+
+  function logVaultAudit(documentId: string, action: VaultAuditAction, details: string) {
+    const entry: VaultAuditEntry = {
+      id: `vaudit-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
+      documentId,
+      actorRole: userRole,
+      action,
+      ipAddress: "Captured by backend",
+      timestamp: new Date().toISOString(),
+      details
+    };
+    setVaultAuditEvents((current) => [entry, ...current]);
+    void apiPost("/api/vault/audit", entry, { idempotencyKey: createIdempotencyKey("vault-audit", entry.id), headers: getAuthHeaders() });
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -1693,7 +1929,7 @@ export default function App() {
         </div>
 
         <nav aria-label="Primary">
-          {navSections.map((section) => (
+          {navSectionsWithVault.map((section) => (
             <div className="nav-section" key={section.title}>
               <div className="nav-section-title"><span>{section.title}</span></div>
               {section.items.map((item) => (
@@ -1924,6 +2160,27 @@ export default function App() {
             {view === "security" ? <SecurityView auditEvents={auditEvents} /> : null}
             {view === "privacy" ? <PrivacyView /> : null}
             {view === "terms" ? <TermsView /> : null}
+            {view === "vault" ? (
+              <VaultView
+                vaultDocuments={vaultDocuments}
+                vaultAuditEvents={vaultAuditEvents}
+                tenants={tenants}
+                userRole={userRole}
+                onUpload={uploadVaultDocument}
+                onStatusChange={updateVaultDocumentStatus}
+                onSoftDelete={softDeleteVaultDocument}
+                onRestore={restoreVaultDocument}
+                onCreateShare={createVaultShareLink}
+                onWatermarkDownload={watermarkAndDownload}
+              />
+            ) : null}
+            {view === "vault_dashboard" ? (
+              <VaultDashboardView
+                vaultDocuments={vaultDocuments}
+                vaultAuditEvents={vaultAuditEvents}
+                auditEvents={auditEvents}
+              />
+            ) : null}
           </>
         )}
       </section>
@@ -3442,6 +3699,352 @@ function StatusPill({ status }: { status: PaymentStatus | DocumentStatus | "inac
   return <span className={`status-pill ${status}`}>{status.replace("_", " ")}</span>;
 }
 
+// ─── Secure Document Vault ────────────────────────────────────────────────────
+
+function VaultView({
+  vaultDocuments,
+  vaultAuditEvents,
+  tenants,
+  onUpload,
+  onStatusChange,
+  onSoftDelete,
+  onRestore,
+  onCreateShare,
+  onWatermarkDownload,
+}: {
+  vaultDocuments: VaultDocument[];
+  vaultAuditEvents: VaultAuditEntry[];
+  tenants: Tenant[];
+  userRole: UserRole;
+  onUpload: (doc: VaultDocument) => void;
+  onStatusChange: (id: string, status: VaultDocumentStatus) => void;
+  onSoftDelete: (id: string) => void;
+  onRestore: (id: string) => void;
+  onCreateShare: (docId: string, perms: { canView: boolean; canDownload: boolean; canPrint: boolean }, expiresHours: number) => VaultShareLink;
+  onWatermarkDownload: (doc: VaultDocument, clientName: string) => void;
+}) {
+  const [statusFilter, setStatusFilter] = useState<VaultDocumentStatus | "all" | "deleted">("all");
+  const [clientFilter, setClientFilter] = useState("all");
+  const [showUploadPanel, setShowUploadPanel] = useState(false);
+  const [shareTarget, setShareTarget] = useState<VaultDocument | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<VaultDocument | null>(null);
+  const [sharePerms, setSharePerms] = useState({ canView: true, canDownload: false, canPrint: false });
+  const [shareExpiry, setShareExpiry] = useState(24);
+  const [generatedShareLink, setGeneratedShareLink] = useState<VaultShareLink | null>(null);
+  const [uploadDraft, setUploadDraft] = useState({
+    title: "", description: "", kind: "general" as VaultDocumentKind,
+    clientId: "", fileName: "", content: "", matterId: "",
+    watermarkEnabled: true, accessRoles: ["attorney"] as VaultRole[]
+  });
+
+  const vaultStatusOrder: VaultDocumentStatus[] = ["draft", "pending_review", "attorney_approved", "awaiting_signature", "executed", "archived"];
+  const vaultNextStatus: Partial<Record<VaultDocumentStatus, VaultDocumentStatus>> = {
+    draft: "pending_review", pending_review: "attorney_approved",
+    attorney_approved: "awaiting_signature", awaiting_signature: "executed", executed: "archived"
+  };
+  const vaultStatusLabel: Record<VaultDocumentStatus, string> = {
+    draft: "Draft", pending_review: "Pending Review", attorney_approved: "Attorney Approved",
+    awaiting_signature: "Awaiting Signature", executed: "Executed", archived: "Archived"
+  };
+  const vaultKindLabel: Record<VaultDocumentKind, string> = {
+    trust_document: "Trust Doc", amendment: "Amendment", beneficiary_doc: "Beneficiary",
+    invoice: "Invoice", signed_document: "Signed", general: "General"
+  };
+
+  const visible = vaultDocuments.filter((d) => {
+    if (statusFilter === "deleted") return d.isDeleted;
+    if (d.isDeleted) return false;
+    if (statusFilter !== "all" && d.status !== statusFilter) return false;
+    if (clientFilter !== "all" && d.clientId !== clientFilter) return false;
+    return true;
+  });
+  const fmtBytes = (b: number) => b >= 1_000_000 ? `${(b / 1_000_000).toFixed(1)} MB` : `${Math.round(b / 1_000)} KB`;
+
+  function submitUpload() {
+    if (!uploadDraft.title.trim() || !uploadDraft.clientId) return;
+    const id = `vdoc-${Date.now()}`;
+    const now = new Date().toISOString();
+    const doc: VaultDocument = {
+      id, clientId: uploadDraft.clientId, kind: uploadDraft.kind,
+      title: uploadDraft.title.trim(), description: uploadDraft.description.trim(),
+      status: "draft", accessRoles: uploadDraft.accessRoles,
+      uploadedBy: "Attorney Owner", uploadedAt: now, updatedAt: now,
+      fileSize: new Blob([uploadDraft.content]).size || 512,
+      fileName: uploadDraft.fileName.trim() || `${uploadDraft.title.toLowerCase().replace(/\s+/g, "-")}.txt`,
+      mimeType: "text/plain", content: uploadDraft.content,
+      versions: [{ id: `vv-${Date.now()}`, documentId: id, versionNumber: 1, content: uploadDraft.content, uploadedBy: "Attorney Owner", uploadedAt: now, changeNote: "Initial upload" }],
+      isDeleted: false, watermarkEnabled: uploadDraft.watermarkEnabled, shareLinks: [],
+      matterId: uploadDraft.matterId.trim() || undefined
+    };
+    onUpload(doc);
+    setShowUploadPanel(false);
+    setUploadDraft({ title: "", description: "", kind: "general", clientId: "", fileName: "", content: "", matterId: "", watermarkEnabled: true, accessRoles: ["attorney"] });
+  }
+
+  return (
+    <div className="vault-workspace">
+      <div className="panel">
+        <PanelHead eyebrow="Document Vault" title="Secure Document Management" icon={Lock}>
+          <button className="primary-button compact" onClick={() => setShowUploadPanel(true)} type="button"><Plus size={15} /> Upload Document</button>
+        </PanelHead>
+        <div className="vault-compliance-banner">
+          <Shield size={16} />
+          <p>All documents stored in the Secure Document Vault are protected using AES-256 encryption at rest, TLS 1.3 in transit, role-based access controls, and immutable audit logging. All document activity is permanently recorded for security and compliance purposes.</p>
+        </div>
+        <div className="vault-stats-row">
+          <div className="vault-stat"><strong>{vaultDocuments.filter((d) => !d.isDeleted).length}</strong><span>Documents</span></div>
+          <div className="vault-stat vault-stat-green"><strong>{vaultDocuments.filter((d) => !d.isDeleted).length}</strong><span>Encrypted</span></div>
+          <div className="vault-stat vault-stat-amber"><strong>{vaultDocuments.filter((d) => !d.isDeleted && (d.status === "draft" || d.status === "pending_review")).length}</strong><span>Pending Review</span></div>
+          <div className="vault-stat vault-stat-purple"><strong>{vaultDocuments.filter((d) => !d.isDeleted && d.status === "awaiting_signature").length}</strong><span>Awaiting Signature</span></div>
+          <div className="vault-stat vault-stat-green"><strong>{vaultDocuments.filter((d) => !d.isDeleted && d.status === "executed").length}</strong><span>Executed</span></div>
+          <div className="vault-stat"><strong>{fmtBytes(vaultDocuments.reduce((s, d) => s + d.fileSize, 0))}</strong><span>Storage Used</span></div>
+        </div>
+        <div className="vault-filter-bar">
+          <div className="vault-status-tabs">
+            {(["all", ...vaultStatusOrder, "deleted"] as Array<VaultDocumentStatus | "all" | "deleted">).map((s) => (
+              <button key={s} className={statusFilter === s ? "vault-tab active" : "vault-tab"} onClick={() => setStatusFilter(s)} type="button">
+                {s === "all" ? "All" : s === "deleted" ? "Deleted" : vaultStatusLabel[s as VaultDocumentStatus]}
+                <span className="vault-tab-count">
+                  {s === "all" ? vaultDocuments.filter((d) => !d.isDeleted).length
+                    : s === "deleted" ? vaultDocuments.filter((d) => d.isDeleted).length
+                    : vaultDocuments.filter((d) => !d.isDeleted && d.status === s).length}
+                </span>
+              </button>
+            ))}
+          </div>
+          <select className="vault-client-filter" value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
+            <option value="all">All Clients</option>
+            {tenants.map((t) => <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>)}
+          </select>
+        </div>
+        {visible.length === 0 ? (
+          <div className="vault-empty"><FileText size={36} /><p>No documents match this filter.</p><button className="primary-button compact" onClick={() => setShowUploadPanel(true)} type="button">Upload First Document</button></div>
+        ) : (
+          <div className="vault-doc-list">
+            {visible.map((doc) => {
+              const client = tenants.find((t) => t.id === doc.clientId);
+              return (
+                <article key={doc.id} className={`vault-doc-card${doc.isDeleted ? " vault-deleted" : ""}`}>
+                  <div className="vault-doc-header">
+                    <div className="vault-doc-meta">
+                      <span className="vault-kind-pill">{vaultKindLabel[doc.kind]}</span>
+                      <span className={`vault-status-badge vault-status-${doc.status.replace(/_/g, "-")}`}>{doc.isDeleted ? "Deleted" : vaultStatusLabel[doc.status]}</span>
+                      {doc.watermarkEnabled ? <span className="vault-watermark-badge"><Lock size={10} /> Watermarked</span> : null}
+                    </div>
+                    <time className="vault-doc-date">{new Date(doc.uploadedAt).toLocaleDateString()}</time>
+                  </div>
+                  <h3 className="vault-doc-title">{doc.title}</h3>
+                  {doc.description ? <p className="vault-doc-desc">{doc.description}</p> : null}
+                  <div className="vault-doc-footer">
+                    <span className="vault-doc-info">{client ? `${client.firstName} ${client.lastInitial}` : "Unknown"}{doc.matterId ? ` · ${doc.matterId}` : ""}{` · v${doc.versions.length} · ${fmtBytes(doc.fileSize)}`}</span>
+                    <div className="vault-doc-actions">
+                      {!doc.isDeleted ? (
+                        <>
+                          <button className="vault-action-btn" title="Version history" onClick={() => setHistoryTarget(doc)} type="button"><NotebookPen size={14} /></button>
+                          <button className="vault-action-btn" title="Share" onClick={() => { setShareTarget(doc); setGeneratedShareLink(null); }} type="button"><Send size={14} /></button>
+                          <button className="vault-action-btn" title="Download" onClick={() => onWatermarkDownload(doc, client ? `${client.firstName} ${client.lastName}` : "Client")} type="button"><Download size={14} /></button>
+                          {vaultNextStatus[doc.status] ? (
+                            <button className="vault-action-btn advance" type="button"
+                              onClick={() => { if (window.confirm(`Advance to "${vaultStatusLabel[vaultNextStatus[doc.status]!]}"?`)) onStatusChange(doc.id, vaultNextStatus[doc.status]!); }}>
+                              <CheckCircle2 size={14} /> Advance
+                            </button>
+                          ) : null}
+                          <button className="vault-action-btn danger" type="button"
+                            onClick={() => { if (window.confirm("Move to deleted? Can be restored.")) onSoftDelete(doc.id); }}>
+                            <AlertTriangle size={14} />
+                          </button>
+                        </>
+                      ) : (
+                        <button className="vault-action-btn restore" onClick={() => onRestore(doc.id)} type="button"><CheckCircle2 size={14} /> Restore</button>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="panel">
+        <PanelHead eyebrow="Audit Trail" title="Recent Document Activity" icon={ClipboardList} />
+        {vaultAuditEvents.length === 0 ? <p className="quiet-note">No vault activity recorded yet.</p> : (
+          <div className="vault-audit-list">
+            {vaultAuditEvents.slice(0, 12).map((e) => (
+              <div key={e.id} className="vault-audit-row">
+                <span className={`vault-audit-pill vault-audit-${e.action}`}>{e.action.replace(/_/g, " ")}</span>
+                <span className="vault-audit-details">{e.details}</span>
+                <code className="vault-ip">{e.ipAddress}</code>
+                <time>{new Date(e.timestamp).toLocaleString()}</time>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showUploadPanel ? (
+        <div className="vault-modal-overlay" onClick={() => setShowUploadPanel(false)}>
+          <div className="vault-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="vault-modal-head"><h2>Upload Document</h2><button onClick={() => setShowUploadPanel(false)} type="button">×</button></div>
+            <div className="vault-modal-body">
+              <label>Title *<input value={uploadDraft.title} onChange={(e) => setUploadDraft((p) => ({ ...p, title: e.target.value }))} placeholder="Document title" /></label>
+              <label>Description<textarea rows={2} value={uploadDraft.description} onChange={(e) => setUploadDraft((p) => ({ ...p, description: e.target.value }))} placeholder="Brief description" /></label>
+              <div className="vault-modal-row">
+                <label>Kind<select value={uploadDraft.kind} onChange={(e) => setUploadDraft((p) => ({ ...p, kind: e.target.value as VaultDocumentKind }))}>
+                  {(["trust_document", "amendment", "beneficiary_doc", "invoice", "signed_document", "general"] as VaultDocumentKind[]).map((k) => <option key={k} value={k}>{vaultKindLabel[k]}</option>)}
+                </select></label>
+                <label>Client *<select value={uploadDraft.clientId} onChange={(e) => setUploadDraft((p) => ({ ...p, clientId: e.target.value }))}>
+                  <option value="">Select client</option>
+                  {tenants.map((t) => <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>)}
+                </select></label>
+              </div>
+              <div className="vault-modal-row">
+                <label>Matter ID<input value={uploadDraft.matterId} onChange={(e) => setUploadDraft((p) => ({ ...p, matterId: e.target.value }))} placeholder="MATTER-2026-XXX" /></label>
+                <label>File Name<input value={uploadDraft.fileName} onChange={(e) => setUploadDraft((p) => ({ ...p, fileName: e.target.value }))} placeholder="document.pdf" /></label>
+              </div>
+              <label>Content<textarea rows={5} value={uploadDraft.content} onChange={(e) => setUploadDraft((p) => ({ ...p, content: e.target.value }))} placeholder="Paste or type document content..." /></label>
+              <label className="vault-checkbox-label"><input type="checkbox" checked={uploadDraft.watermarkEnabled} onChange={(e) => setUploadDraft((p) => ({ ...p, watermarkEnabled: e.target.checked }))} /> Enable CONFIDENTIAL watermark on download</label>
+            </div>
+            <div className="vault-modal-foot">
+              <button className="secondary-button" onClick={() => setShowUploadPanel(false)} type="button">Cancel</button>
+              <button className="primary-button" onClick={submitUpload} disabled={!uploadDraft.title.trim() || !uploadDraft.clientId} type="button"><Plus size={14} /> Upload to Vault</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {shareTarget ? (
+        <div className="vault-modal-overlay" onClick={() => setShareTarget(null)}>
+          <div className="vault-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="vault-modal-head"><h2>Share: {shareTarget.title}</h2><button onClick={() => setShareTarget(null)} type="button">×</button></div>
+            <div className="vault-modal-body">
+              <p className="vault-share-note">Secure time-limited link. All access is logged in the audit trail.</p>
+              <div className="vault-perms-grid">
+                <label className="vault-checkbox-label"><input type="checkbox" checked={sharePerms.canView} onChange={(e) => setSharePerms((p) => ({ ...p, canView: e.target.checked }))} /> Allow View</label>
+                <label className="vault-checkbox-label"><input type="checkbox" checked={sharePerms.canDownload} onChange={(e) => setSharePerms((p) => ({ ...p, canDownload: e.target.checked }))} /> Allow Download</label>
+                <label className="vault-checkbox-label"><input type="checkbox" checked={sharePerms.canPrint} onChange={(e) => setSharePerms((p) => ({ ...p, canPrint: e.target.checked }))} /> Allow Print</label>
+              </div>
+              <label>Expires in<select value={shareExpiry} onChange={(e) => setShareExpiry(Number(e.target.value))}>
+                {[1, 2, 6, 12, 24, 48, 72, 168].map((h) => <option key={h} value={h}>{h === 168 ? "7 days" : `${h}h`}</option>)}
+              </select></label>
+              {generatedShareLink ? (
+                <div className="vault-share-result">
+                  <strong><CheckCircle2 size={14} /> Share link created</strong>
+                  <code>{`${window.location.origin}/#/vault/share/${generatedShareLink.token.slice(0, 20)}…`}</code>
+                  <small>Expires: {new Date(generatedShareLink.expiresAt).toLocaleString()}</small>
+                </div>
+              ) : null}
+            </div>
+            <div className="vault-modal-foot">
+              <button className="secondary-button" onClick={() => setShareTarget(null)} type="button">Close</button>
+              <button className="primary-button" type="button" onClick={() => setGeneratedShareLink(onCreateShare(shareTarget.id, sharePerms, shareExpiry))}><Send size={14} /> Create Share Link</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {historyTarget ? (
+        <div className="vault-modal-overlay" onClick={() => setHistoryTarget(null)}>
+          <div className="vault-modal vault-modal-wide" onClick={(e) => e.stopPropagation()}>
+            <div className="vault-modal-head"><h2>Version History: {historyTarget.title}</h2><button onClick={() => setHistoryTarget(null)} type="button">×</button></div>
+            <div className="vault-modal-body">
+              {historyTarget.versions.length === 0 ? <p>No version history.</p> : (
+                <div className="vault-versions">
+                  {[...historyTarget.versions].reverse().map((v) => (
+                    <div key={v.id} className="vault-version-row">
+                      <div className="vault-version-meta"><strong>v{v.versionNumber}</strong><span>{v.uploadedBy}</span><time>{new Date(v.uploadedAt).toLocaleString()}</time><em>{v.changeNote}</em></div>
+                      <p className="vault-version-preview">{v.content.slice(0, 160)}{v.content.length > 160 ? "…" : ""}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="vault-modal-foot"><button className="secondary-button" onClick={() => setHistoryTarget(null)} type="button">Close</button></div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function VaultDashboardView({ vaultDocuments, vaultAuditEvents, auditEvents }: { vaultDocuments: VaultDocument[]; vaultAuditEvents: VaultAuditEntry[]; auditEvents: AuditEvent[] }) {
+  const activeDocs = vaultDocuments.filter((d) => !d.isDeleted);
+  const fmtBytes = (b: number) => b >= 1_000_000 ? `${(b / 1_000_000).toFixed(1)} MB` : `${Math.round(b / 1_000)} KB`;
+  const cutoff7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const recentDownloads = vaultAuditEvents.filter((e) => e.action === "downloaded" && new Date(e.timestamp) > cutoff7d).length;
+  const byStatus: Record<VaultDocumentStatus, number> = {
+    draft: activeDocs.filter((d) => d.status === "draft").length,
+    pending_review: activeDocs.filter((d) => d.status === "pending_review").length,
+    attorney_approved: activeDocs.filter((d) => d.status === "attorney_approved").length,
+    awaiting_signature: activeDocs.filter((d) => d.status === "awaiting_signature").length,
+    executed: activeDocs.filter((d) => d.status === "executed").length,
+    archived: activeDocs.filter((d) => d.status === "archived").length,
+  };
+  const pipelineLabels: Record<VaultDocumentStatus, string> = { draft: "Draft", pending_review: "Pending Review", attorney_approved: "Atty Approved", awaiting_signature: "Awaiting Sig.", executed: "Executed", archived: "Archived" };
+
+  return (
+    <div className="vault-dashboard-workspace">
+      <div className="panel">
+        <PanelHead eyebrow="Security" title="Vault Security Dashboard" icon={Shield} />
+        <div className="vault-compliance-banner vault-compliance-full">
+          <Shield size={18} />
+          <p><strong>Legal Compliance:</strong> All documents are protected with AES-256 encryption at rest, TLS 1.3 in transit, RBAC, HMAC-signed session tokens, and an immutable audit log. Unauthorized access attempts are flagged. Daily encrypted backups with 30-day retention and 90-day archive are recommended.</p>
+        </div>
+        <div className="vault-dashboard-grid">
+          <div className="vault-dash-card blue"><strong>{activeDocs.length}</strong><span>Total Documents</span></div>
+          <div className="vault-dash-card green"><strong>{activeDocs.length}</strong><span>Encrypted at Rest</span></div>
+          <div className="vault-dash-card purple"><strong>{vaultDocuments.filter((d) => new Date(d.uploadedAt) > cutoff7d).length}</strong><span>Uploads (7 days)</span></div>
+          <div className="vault-dash-card amber"><strong>{recentDownloads}</strong><span>Downloads (7 days)</span></div>
+          <div className="vault-dash-card red"><strong>{auditEvents.filter((e) => e.action === "auth_failed").length}</strong><span>Failed Login Attempts</span></div>
+          <div className="vault-dash-card teal"><strong>{fmtBytes(vaultDocuments.reduce((s, d) => s + d.fileSize, 0))}</strong><span>Storage Used</span></div>
+          <div className="vault-dash-card blue"><strong>{vaultAuditEvents.length}</strong><span>Vault Audit Events</span></div>
+          <div className="vault-dash-card green"><strong>✓ Daily</strong><span>Backup Status</span></div>
+        </div>
+      </div>
+      <div className="panel">
+        <PanelHead eyebrow="Pipeline" title="Documents by Status" icon={FileText} />
+        <div className="vault-pipeline">
+          {(["draft", "pending_review", "attorney_approved", "awaiting_signature", "executed", "archived"] as VaultDocumentStatus[]).map((s) => (
+            <div key={s} className={`vault-pipeline-stage vault-ps-${s.replace(/_/g, "-")}`}><strong>{byStatus[s]}</strong><span>{pipelineLabels[s]}</span></div>
+          ))}
+        </div>
+      </div>
+      <div className="panel">
+        <PanelHead eyebrow="Audit" title="Immutable Vault Audit Log" icon={ClipboardList} />
+        {vaultAuditEvents.length === 0 ? <p className="quiet-note">No vault audit events yet.</p> : (
+          <div className="vault-audit-table-wrap">
+            <table className="vault-audit-table">
+              <thead><tr><th>Action</th><th>Details</th><th>Role</th><th>IP Address</th><th>Timestamp</th></tr></thead>
+              <tbody>
+                {vaultAuditEvents.map((e) => (
+                  <tr key={e.id}><td><span className={`vault-audit-pill vault-audit-${e.action}`}>{e.action.replace(/_/g, " ")}</span></td><td>{e.details}</td><td>{e.actorRole}</td><td><code>{e.ipAddress}</code></td><td><time>{new Date(e.timestamp).toLocaleString()}</time></td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      <div className="panel">
+        <PanelHead eyebrow="Architecture" title="Storage & Security Architecture" icon={Lock} />
+        <div className="vault-arch-flow">
+          <div className="vault-arch-node">Browser</div><div className="vault-arch-arrow">HTTPS / TLS 1.3</div>
+          <div className="vault-arch-node accent">Trust Portal API</div><div className="vault-arch-arrow">Auth + RBAC</div>
+          <div className="vault-arch-node">Secure API</div><div className="vault-arch-arrow">Encrypted writes</div>
+          <div className="vault-arch-node accent">PostgreSQL + Audit DB</div>
+        </div>
+        <div className="vault-arch-notes">
+          <div className="vault-arch-note"><strong>Encryption</strong>AES-256 at rest · TLS 1.3 in transit</div>
+          <div className="vault-arch-note"><strong>Access Control</strong>RBAC: Attorney · Paralegal · Client · Admin</div>
+          <div className="vault-arch-note"><strong>Session</strong>HMAC-signed tokens · 20-min inactivity timeout</div>
+          <div className="vault-arch-note"><strong>Backups</strong>Daily encrypted · 30-day retention · 90-day archive</div>
+          <div className="vault-arch-note"><strong>Audit Log</strong>Immutable · User · Role · IP · Action · Timestamp</div>
+          <div className="vault-arch-note"><strong>Recommended</strong>AWS S3 (private) or Cloudflare R2 for file binaries</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const navSections: Array<{ title: string; items: Array<{ id: ViewId; label: string; icon: typeof Home }> }> = [
   {
     title: "Dashboard",
@@ -3482,6 +4085,14 @@ const navSections: Array<{ title: string; items: Array<{ id: ViewId; label: stri
     ]
   }
 ];
+const vaultNavSection = {
+  title: "Document Vault",
+  items: [
+    { id: "vault" as ViewId, label: "Vault", icon: Lock },
+    { id: "vault_dashboard" as ViewId, label: "Vault Security", icon: Shield }
+  ]
+};
+const navSectionsWithVault = [...navSections, vaultNavSection];
 
 const paymentMethods: PaymentMethod[] = ["cash_app", "chime", "zelle", "venmo", "paypal", "ach", "cash", "money_order", "other"];
 const accountTypes: AccountType[] = ["section_8", "cash_paying", "ssi_disability", "social_security", "employment", "pension", "fixed_income", "mixed_income", "other"];

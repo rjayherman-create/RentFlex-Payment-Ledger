@@ -33,7 +33,9 @@ export async function getState() {
     reminders: await getCollection("reminders"),
     documents: await getCollection("documents"),
     planAcceptances: await getCollection("plan_acceptances"),
-    generatedPlanPdfs: await getCollection("generated_plan_pdfs")
+    generatedPlanPdfs: await getCollection("generated_plan_pdfs"),
+    vaultDocuments: await getCollection("vault_documents"),
+    vaultAuditEvents: await getCollection("vault_audit_events")
   };
 }
 
@@ -115,5 +117,8 @@ async function initialize() {
     await seedCollection("audit_events", []);
     await seedCollection("communication_receipts", []);
     await seedCollection("generated_plan_pdfs", []);
+    await seedCollection("vault_documents", []);
+    await seedCollection("vault_audit_events", []);
+    await seedCollection("vault_share_links", []);
   }
 }

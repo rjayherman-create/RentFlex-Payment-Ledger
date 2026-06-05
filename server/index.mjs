@@ -315,8 +315,52 @@ async function handleApi(req, res) {
     sendJson(req, res, 201, event);
     return;
   }
+  // ─── Secure Document Vault ───────────────────────────────────────────────
+  if (req.method === "POST" && url.pathname === "/api/vault/documents") {
+    if (!requireSession(req, res)) return;
+    const doc = await upsertRecord("vault_documents", await readJson(req));
+    sendJson(req, res, 201, doc);
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/vault/audit") {
+    if (!requireSession(req, res)) return;
+    const entry = await upsertRecord("vault_audit_events", await readJson(req));
+    sendJson(req, res, 201, entry);
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/vault/share") {
+    if (!requireSession(req, res)) return;
+    const link = await upsertRecord("vault_share_links", await readJson(req));
+    sendJson(req, res, 201, link);
+    return;
+  }
+  const vaultStatusAction = url.pathname.match(/^\/api\/vault\/documents\/([^/]+)\/status$/);
+  if (req.method === "PATCH" && vaultStatusAction) {
+    if (!requireSession(req, res)) return;
+    const [, id] = vaultStatusAction;
+    const body = await readJson(req);
+    const doc = await patchRecord("vault_documents", id, { status: body.status, updatedAt: new Date().toISOString() });
+    if (!doc) { sendJson(req, res, 404, { error: "Vault document not found" }); return; }
+    sendJson(req, res, 200, doc);
+    return;
+  }
+  const vaultLifecycleAction = url.pathname.match(/^\/api\/vault\/documents\/([^/]+)\/(delete|restore)$/);
+  if (req.method === "PATCH" && vaultLifecycleAction) {
+    if (!requireSession(req, res)) return;
+    const [, id, action] = vaultLifecycleAction;
+    const patch = action === "delete"
+      ? { isDeleted: true, deletedAt: new Date().toISOString() }
+      : { isDeleted: false, deletedAt: null, deletedBy: null };
+    const doc = await patchRecord("vault_documents", id, patch);
+    if (!doc) { sendJson(req, res, 404, { error: "Vault document not found" }); return; }
+    sendJson(req, res, 200, doc);
+    return;
+  }
   sendJson(req, res, 404, { error: "Not found" });
 }
+// ─── Vault endpoints ──────────────────────────────────────────────────────────
+// (Note: inserted before 404 via the handleApi function flow — this comment
+//  block is for future maintainers; actual route guards are above in handleApi)
 
 async function readJson(req) {
   const chunks = [];
